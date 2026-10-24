@@ -6,6 +6,8 @@
 export const PRECACHE_PLACEHOLDER = "self.__PRECACHE__ || ['./']";
 /** Token in public/sw.js replaced by the build hash. */
 export const BUILD_PLACEHOLDER = '__BUILD__';
+/** Optional token in public/sw.js replaced by the model-files hash (stable across app deploys). */
+export const MODELS_PLACEHOLDER = '__MODELS__';
 
 /** Normalize a dist-relative path to the './...' form (forward slashes). */
 export function normalizePath(p: string): string {
@@ -49,21 +51,26 @@ function fnv1a(str: string, seed = 0x811c9dc5): string {
   return h.toString(16).padStart(8, '0');
 }
 
-/** Short content hash (12 hex chars) of the sorted precache list plus the sw template. */
-export function buildHash(list: readonly string[], template: string): string {
-  const input = JSON.stringify([...list].sort()) + '\n' + template;
+/** Short hash (12 hex chars) of the sorted precache list, the sw template and a file-content fingerprint. */
+export function buildHash(list: readonly string[], template: string, fingerprint = ''): string {
+  const input = JSON.stringify([...list].sort()) + '\n' + template + '\n' + fingerprint;
   return fnv1a(input) + fnv1a(input, 0x050c5d1f).slice(0, 4);
 }
 
-/** Fill the sw.js template with the precache list and build hash. */
-export function renderServiceWorker(template: string, list: readonly string[]): string {
+/**
+ * Fill the sw.js template. `fingerprint` should change when any precached file's bytes
+ * change (content hashes of fixed-name model files), so a new cache name is issued.
+ */
+export function renderServiceWorker(template: string, list: readonly string[], fingerprint = '', modelFingerprint = ''): string {
   if (!template.includes(PRECACHE_PLACEHOLDER) || !template.includes(BUILD_PLACEHOLDER)) {
     throw new Error('sw.js template is missing the __PRECACHE__ or __BUILD__ placeholder');
   }
-  const hash = buildHash(list, template);
+  const hash = buildHash(list, template, fingerprint);
   return template
     .split(PRECACHE_PLACEHOLDER)
     .join(JSON.stringify(list, null, 2))
     .split(BUILD_PLACEHOLDER)
-    .join(hash);
+    .join(hash)
+    .split(MODELS_PLACEHOLDER)
+    .join(buildHash([], 'models', modelFingerprint));
 }

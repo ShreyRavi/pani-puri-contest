@@ -11,6 +11,12 @@ export const FRAME_H = 480;
 const STALL_MS = 2000;
 const WATCHDOG_TICK_MS = 500;
 const RETRY_MS = 5000;
+/** First inference after ready can be slow (GPU shader compile); give it longer before calling it a stall. */
+const FIRST_FRAME_MS = 8000;
+/** Consecutive non-fatal frame errors before the worker is treated as crashed. */
+const MAX_FRAME_ERRORS = 3;
+/** After a camera-only recovery, how long to wait for frames before rebuilding the worker too. */
+const CAMERA_ONLY_MS = 3000;
 const INIT_TIMEOUT_MS = 20000;
 
 type Listener = (r: VisionResult) => void;
@@ -62,6 +68,13 @@ export class Vision {
   private retryTimer: number | null = null;
   private retrying = false;
   private initDone: ((ok: boolean) => void) | null = null;
+  private cameraGen = 0;
+  private frameErrors = 0;
+  private lastCause: VisionErrorCause | null = null;
+  private cameraOnlyTried = false;
+  /** the camera-only attempt actually reopened the camera (so a respawn is the next step) */
+  private cameraOnlyOpened = false;
+  private awaitingFirstFrame = false;
 
   constructor() {
     this.video = document.createElement('video');
@@ -81,6 +94,7 @@ export class Vision {
   }
 
   private fail(cause: VisionErrorCause): void {
+    this.lastCause = cause;
     this.setStatus({ state: 'error', cause, message: CAUSE_MESSAGES[cause] });
   }
 
@@ -88,13 +102,23 @@ export class Vision {
   async start(deviceId: string): Promise<void> {
     this.deviceId = deviceId;
     this.lastResultAt = performance.now();
-    this.setStatus({ state: 'starting' });
+    if (!this.offline) this.setStatus({ state: 'starting' }); // keep an outage's cause visible
     if (!(await this.openCamera())) return;
-    if (!this.worker) void this.spawnWorker();
-    else if (this.delegate) this.setStatus({ state: 'ready', delegate: this.delegate }); // camera switch, worker warm
-    else this.setStatus({ state: 'loading' });
     this.startPump();
     this.startWatchdog();
+    if (this.worker && this.delegate) {
+      if (!this.offline) this.setStatus({ state: 'ready', delegate: this.delegate }); // camera switch, worker warm
+      return;
+    }
+    if (!this.worker) {
+      const ok = await this.spawnWorker();
+      if (!ok && !this.everReady && this.status.state !== 'error') {
+        this.killWorker();
+        this.fail('model-failed'); // init hung past INIT_TIMEOUT_MS
+      }
+    } else {
+      this.setStatus({ state: 'loading' });
+    }
   }
 
   /** Stop everything: camera, worker, watchdog, retries. */
@@ -110,6 +134,8 @@ export class Vision {
     this.stream = null;
     this.video.srcObject = null;
     this.offline = false;
+    this.everReady = false;
+    this.cameraGen++;
     this.setStatus({ state: 'off' });
   }
 
@@ -124,6 +150,8 @@ export class Vision {
   }
 
   private async openCamera(): Promise<boolean> {
+    // Only the newest call may attach a stream; older ones stop what they opened.
+    const gen = ++this.cameraGen;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     let stream: MediaStream;
@@ -132,16 +160,21 @@ export class Vision {
     } catch (err) {
       const name = (err as DOMException)?.name;
       if (!this.deviceId || (name !== 'OverconstrainedError' && name !== 'NotFoundError')) {
-        this.fail(cameraCause(err));
+        if (gen === this.cameraGen) this.cameraFailed(cameraCause(err));
         return false;
       }
       try {
         stream = await getCamera(''); // saved camera gone: use the default one
       } catch (err2) {
-        this.fail(cameraCause(err2));
+        if (gen === this.cameraGen) this.cameraFailed(cameraCause(err2));
         return false;
       }
     }
+    if (gen !== this.cameraGen) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+    (this.stream as MediaStream | null)?.getTracks().forEach((t) => t.stop()); // set by an overlapping call meanwhile
     this.stream = stream;
     stream.getVideoTracks()[0]?.addEventListener('ended', () => {
       if (this.stream === stream) this.goOffline('stalled');
@@ -154,6 +187,7 @@ export class Vision {
   /** Start a fresh worker; resolves true on 'ready', false on error, crash or timeout. */
   private spawnWorker(): Promise<boolean> {
     this.killWorker();
+    this.frameErrors = 0;
     if (!this.offline) this.setStatus({ state: 'loading' });
     const w = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     this.worker = w;
@@ -191,21 +225,38 @@ export class Vision {
     if (m.type === 'ready') {
       this.delegate = m.delegate;
       this.everReady = true;
+      this.frameErrors = 0;
+      this.awaitingFirstFrame = true;
       this.lastResultAt = performance.now();
-      this.setStatus({ state: 'ready', delegate: m.delegate });
+      // While offline the error cause stays visible until frames actually flow again.
+      if (!this.offline) this.setStatus({ state: 'ready', delegate: m.delegate });
       this.initDone?.(true);
       return;
     }
     if (m.type === 'error') {
-      this.inFlight = false;
+      if (m.kind === 'hand') {
+        // Optional model: never a crash, and not tied to the frame in flight.
+        console.warn('vision (hands):', m.message);
+        return;
+      }
+      if (m.kind === 'frame') this.inFlight = false;
+      // One bad frame is noise; the stall watchdog catches a worker that stops producing.
+      if (!m.fatal && ++this.frameErrors < MAX_FRAME_ERRORS) {
+        console.warn('vision (frame):', m.message);
+        return;
+      }
       this.workerFailed(m.message);
       return;
     }
     this.inFlight = false;
     const now = performance.now();
     this.lastResultAt = now;
+    this.awaitingFirstFrame = false;
+    this.frameErrors = 0;
     if (this.offline) {
+      this.cameraOnlyTried = false;
       this.offline = false;
+      if (this.delegate) this.setStatus({ state: 'ready', delegate: this.delegate });
       if (this.retryTimer !== null) clearTimeout(this.retryTimer);
       this.retryTimer = null;
       this.onRecover();
@@ -222,7 +273,10 @@ export class Vision {
     console.warn('vision:', message);
     this.initDone?.(false);
     if (this.everReady) this.goOffline('worker-crashed');
-    else this.fail('model-failed');
+    else {
+      this.killWorker(); // a later start() must spawn a fresh worker, not wait on this one
+      this.fail('model-failed');
+    }
   }
 
   // ---------- watchdog + recovery (only after the first ready) ----------
@@ -231,7 +285,8 @@ export class Vision {
     if (this.watchdog !== null) return;
     this.watchdog = window.setInterval(() => {
       if (!this.everReady || this.offline || document.hidden) return;
-      if (performance.now() - this.lastResultAt > STALL_MS) this.goOffline('stalled');
+      const limit = this.awaitingFirstFrame ? FIRST_FRAME_MS : STALL_MS;
+      if (performance.now() - this.lastResultAt > limit) this.goOffline('stalled');
     }, WATCHDOG_TICK_MS);
     document.addEventListener('visibilitychange', this.onVisibility);
   }
@@ -240,6 +295,16 @@ export class Vision {
   private onVisibility = (): void => {
     if (!document.hidden) this.lastResultAt = performance.now();
   };
+
+  /** A camera failure after the first ready is an outage (retried); before it, a setup error. */
+  private cameraFailed(cause: VisionErrorCause): void {
+    if (this.everReady) {
+      if (this.offline) this.fail(cause);
+      else this.goOffline(cause);
+    } else {
+      this.fail(cause);
+    }
+  }
 
   private goOffline(cause: VisionErrorCause): void {
     if (!this.everReady || this.offline) return;
@@ -254,19 +319,34 @@ export class Vision {
     this.retryTimer = window.setTimeout(() => void this.retry(), ms);
   }
 
-  /** One recovery attempt: fresh worker, re-init, restart camera. Next one 5s after this finishes. */
+  /** One recovery attempt: fresh worker, re-init, restart camera. Next one RETRY_MS after this finishes. */
   private async retry(): Promise<void> {
     this.retryTimer = null;
     if (!this.offline) return;
     this.retrying = true;
+    const cameraSide = this.lastCause !== 'worker-crashed' && this.lastCause !== 'model-failed';
+    const warm = !!this.worker && !!this.delegate;
+    let cameraOnly = false;
     try {
-      const ready = this.spawnWorker();
-      const camera = await this.openCamera();
-      if ((await ready) && camera) this.startPump();
+      // Most stalls are a bumped USB cable: reopen the camera and keep the warm model. Only
+      // rebuild the worker if the camera did come back but frames still don't flow.
+      if (cameraSide && warm && !(this.cameraOnlyTried && this.cameraOnlyOpened)) {
+        cameraOnly = true;
+        this.cameraOnlyTried = true;
+        this.lastResultAt = performance.now();
+        this.cameraOnlyOpened = await this.openCamera();
+        if (this.cameraOnlyOpened) this.startPump();
+      } else {
+        this.cameraOnlyTried = false;
+        this.cameraOnlyOpened = false;
+        const ready = this.spawnWorker();
+        const camera = await this.openCamera();
+        if ((await ready) && camera) this.startPump();
+      }
     } finally {
       this.retrying = false;
     }
-    if (this.offline) this.queueRetry(RETRY_MS);
+    if (this.offline) this.queueRetry(cameraOnly ? CAMERA_ONLY_MS : RETRY_MS);
   }
 
   // ---------- frame pump ----------
@@ -286,7 +366,7 @@ export class Vision {
     if (gen !== this.pumpGen) return;
     this.schedule(gen);
     const v = this.video;
-    if (this.inFlight || this.status.state !== 'ready' || v.readyState < 2) return;
+    if (this.inFlight || !this.worker || !this.delegate || v.readyState < 2) return;
     // Keep the camera's aspect ratio at 640px wide so landmarks aren't stretched.
     // captureTime is the sensor timestamp when the browser exposes it; otherwise now.
     const t = captureTime && captureTime > 0 ? captureTime : performance.now();
@@ -343,7 +423,7 @@ function push(arr: number[], v: number, max: number): void {
   if (arr.length > max) arr.shift();
 }
 
-function cameraCause(err: unknown): VisionErrorCause {
+export function cameraCause(err: unknown): VisionErrorCause {
   const name = (err as DOMException)?.name;
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'blocked';
   if (name === 'NotReadableError' || name === 'AbortError') return 'busy';

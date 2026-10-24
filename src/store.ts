@@ -1,11 +1,11 @@
 // App state persisted to localStorage: settings, every finished round, and the
 // in-progress round so a refresh mid-round recovers.
 
-import { DEFAULT_DETECTOR } from './detector';
-import { IDLE, isInRound, runningUntil, type CountMode, type Pending, type RoundState } from './round';
+import { DEFAULT_DETECTOR, type DetectorMode } from './detector';
+import { CAP_MS, end, IDLE, isInRound, runningUntil, tick, type CountMode, type Pending, type RoundState } from './round';
 
 export type SoundMode = 'all' | 'buzzer' | 'muted';
-export type DetectionMode = 'absolute' | 'relative';
+export type DetectionMode = DetectorMode;
 
 export interface Settings {
   cameraId: string;
@@ -42,7 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   detection: 'absolute',
   open: DEFAULT_DETECTOR.open,
   close: DEFAULT_DETECTOR.close,
-  drop: 0.15,
+  drop: DEFAULT_DETECTOR.drop,
   windowSeconds: DEFAULT_DETECTOR.windowMs / 1000,
   cooldownSeconds: DEFAULT_DETECTOR.cooldownMs / 1000,
   requireHand: false,
@@ -80,7 +80,7 @@ export function normalizeRound(raw: unknown): RoundState & { savedAt: number } {
   if (pending && !s.queue.length) s.queue = [{ ...pending, openedAt: pending.openedAt ?? pending.at }];
   if (s.phase === 'buzzer') {
     if (!s.detectUntil) s.detectUntil = s.endsAt + s.detectMs;
-    if (!s.capAt) s.capAt = s.endsAt + 10000;
+    if (!s.capAt) s.capAt = s.endsAt + CAP_MS;
   }
   if (s.phase === 'paused' && !s.pausedFrom) s.pausedFrom = 'live';
   return { ...s, savedAt: typeof savedAt === 'number' ? savedAt : s.endsAt };
@@ -93,7 +93,8 @@ export function isStale(s: RoundState, savedAt: number, now: number): boolean {
 
 export function normalizeResult(r: Partial<Result>): Result {
   return {
-    id: String(r.id ?? ''),
+    // Stable fallback id so a legacy entry keeps its identity across reloads.
+    id: r.id ? String(r.id) : `legacy-${Number(r.at) || 0}-${String(r.name ?? '')}`,
     name: String(r.name ?? ''),
     score: Number(r.score) || 0,
     rejected: Number(r.rejected) || 0,
@@ -104,23 +105,41 @@ export function normalizeResult(r: Partial<Result>): Result {
 }
 
 export const settings: Settings = { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>(KEYS.settings, {}) };
-let results: Result[] = read<Partial<Result>[]>(KEYS.results, []).map(normalizeResult);
+const rawResults = read<unknown>(KEYS.results, []);
+let results: Result[] = (Array.isArray(rawResults) ? rawResults : [])
+  .filter((r): r is Partial<Result> => !!r && typeof r === 'object' && !Array.isArray(r))
+  .map(normalizeResult)
+  .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i);
 let round: RoundState = IDLE;
-let expired: { name: string; savedAt: number } | null = null;
+let expired: { name: string; savedAt: number; saved: number } | null = null;
 
 {
   const loaded = normalizeRound(read<unknown>(KEYS.round, {}));
   const { savedAt, ...r } = loaded;
   if (isStale(r, savedAt, Date.now())) {
-    expired = { name: r.name, savedAt };
+    // Too old to resume. Keep a real score (crash, long pause); drop empty rounds (O12 + review).
+    // Replay what an open tab would have done (auto-confirms, phase changes) before closing it.
+    // tick to Infinity runs through the post-buzzer hold and cap; paused rounds stay frozen.
+    const ended = end(tick(r, Infinity), runningUntil(r, savedAt));
+    if (ended.count > 0) {
+      addResult({
+        name: ended.name,
+        score: ended.count,
+        rejected: ended.rejected,
+        notCounted: ended.notCounted,
+        seconds: Math.round(ended.durationMs / 1000),
+        at: Math.min(Date.now(), ended.resultAt || savedAt),
+      });
+    }
+    expired = { name: r.name, savedAt, saved: ended.count };
     write(KEYS.round, IDLE);
   } else {
     round = r;
   }
 }
 
-/** The discarded stale round, once, for the sticky notice (DD8). */
-export function takeExpired(): { name: string; savedAt: number } | null {
+/** The expired stale round (saved score or 0), once, for the sticky notice (DD8). */
+export function takeExpired(): { name: string; savedAt: number; saved: number } | null {
   const e = expired;
   expired = null;
   return e;

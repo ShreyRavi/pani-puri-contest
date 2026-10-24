@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
@@ -32,7 +33,12 @@ function precacheManifest(): Plugin {
       const template = await readFile(resolve(config.publicDir, 'sw.js'), 'utf8');
       const files = (await walk(outDir)).map((f) => relative(outDir, f));
       const list = buildPrecacheList(files);
-      await writeFile(join(outDir, 'sw.js'), renderServiceWorker(template, list));
+      // Fixed-name files (models, wasm) change bytes without changing names: fold content hashes in.
+      const digests = await Promise.all(
+        list.slice(1).map(async (p) => `${p}:${createHash('sha1').update(await readFile(join(outDir, p))).digest('hex')}`),
+      );
+      const modelDigests = digests.filter((d) => d.includes('/mediapipe/'));
+      await writeFile(join(outDir, 'sw.js'), renderServiceWorker(template, list, digests.join('|'), modelDigests.join('|')));
       config.logger.info(`[precache] dist/sw.js: ${list.length} entries`);
     },
   };

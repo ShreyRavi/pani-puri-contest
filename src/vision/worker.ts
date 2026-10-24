@@ -21,6 +21,9 @@ let fileset: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>> | null =
 let face: FaceLandmarker | null = null;
 let hand: HandLandmarker | null = null;
 let handLoading: Promise<void> | null = null;
+/** After a failed hand-model load, wait before trying again instead of refetching every frame. */
+let handRetryAt = 0;
+const HAND_RETRY_MS = 30000;
 let delegate: 'GPU' | 'CPU' = 'GPU';
 let lastTs = 0;
 let pickState: PickState | null = null;
@@ -47,7 +50,7 @@ async function init(b: string, hands: boolean): Promise<void> {
     FaceLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/face_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numFaces: 3,
+      numFaces: 2,
       minFaceDetectionConfidence: 0.5,
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
@@ -58,15 +61,24 @@ async function init(b: string, hands: boolean): Promise<void> {
 }
 
 function ensureHands(): Promise<void> {
+  if (!handLoading && performance.now() < handRetryAt) return Promise.resolve();
   handLoading ??= create((d) =>
     HandLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/hand_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
       numHands: 2,
     }),
-  ).then((h) => {
-    hand = h;
-  });
+  ).then(
+    (h) => {
+      hand = h;
+    },
+    (err: unknown) => {
+      // Let a later frame retry the load instead of caching the failure forever.
+      handLoading = null;
+      handRetryAt = performance.now() + HAND_RETRY_MS;
+      post({ type: 'error', message: `hand model failed: ${String(err)}`, fatal: false, kind: 'hand' });
+    },
+  );
   return handLoading;
 }
 
@@ -160,13 +172,13 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   if (m.type === 'init') {
-    init(m.base, m.hands).catch((err: unknown) => post({ type: 'error', message: String(err) }));
+    init(m.base, m.hands).catch((err: unknown) => post({ type: 'error', message: String(err), fatal: true, kind: 'init' }));
   } else if (m.type === 'frame') {
     try {
       frame(m.bitmap, m.t, m.hands);
     } catch (err) {
       m.bitmap.close();
-      post({ type: 'error', message: String(err) });
+      post({ type: 'error', message: String(err), fatal: false, kind: 'frame' });
     }
   }
 };

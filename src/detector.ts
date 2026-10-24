@@ -97,7 +97,7 @@ export class BiteDetector {
 
   get closeThreshold(): number {
     const { open, close } = this.cfg;
-    if (this.baseline == null) return close;
+    if (this.baseline == null) return Math.min(close, open - 0.05);
     return Math.min(open - 0.05, close + 0.1, Math.max(close, this.baseline + 0.05));
   }
 
@@ -114,13 +114,17 @@ export class BiteDetector {
     };
   }
 
-  reset(): void {
+  /**
+   * Abandon any bite in progress. `keepCooldown` (face switch, camera recovery) keeps the
+   * cooldown since the last candidate, so a chew right after a counted bite can't count again.
+   */
+  reset(opts: { keepCooldown?: boolean } = {}): void {
     this.phase = 'closed';
     this.peak = 0;
     this.trough = null;
     this.handAtOpen = false;
     this.lastHandAt = -Infinity;
-    this.lastCandidateAt = -Infinity;
+    if (!opts.keepCooldown) this.lastCandidateAt = -Infinity;
   }
 
   push(f: DetectorFrame): DetectorEvent | null {

@@ -184,7 +184,6 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 @keyframes slide-up { from { transform: translateY(100%); } }
 .bite-left { display: flex; align-items: center; gap: 16px; flex: none; white-space: nowrap; }
 .bite-title { font-family: var(--display); font-size: 44px; }
-.bite-conf { font-size: 28px; font-weight: 500; }
 .bite-help { font-size: 28px; font-weight: 700; text-align: right; text-wrap: balance; }
 .stepback {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 20px;
@@ -262,7 +261,6 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .panel-h-gap { margin-top: 10px; }
 .panel-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.grid-gap-top { margin-top: 6px; }
 .field { display: flex; flex-direction: column; gap: 8px; }
 .field > label { font-size: 20px; font-weight: 500; color: var(--sand); }
 .label-split { display: flex; justify-content: space-between; }
@@ -300,7 +298,6 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .meter-open { background: var(--chilli); }
 .meter-legend { position: relative; height: 22px; font-size: 18px; }
 .meter-legend span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.meter-help { font-size: 20px; color: var(--sand); }
 .c-chutney { color: var(--chutney); }
 .c-chilli { color: #ff7a66; }
 .c-cream { color: var(--cream); }

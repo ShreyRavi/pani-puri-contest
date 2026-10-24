@@ -119,3 +119,25 @@ describe('isTooDark', () => {
     expect(isTooDark({ samples: 0, faceRate: 1, luma: 30 }, 'setup')).toBe(true);
   });
 });
+
+describe('pickFace distance gate (review fix)', () => {
+  const contestant = (x = 320) => ({ width: 200, mouth: { x, y: 300 } });
+  const bystander = { width: 190, mouth: { x: 560, y: 260 } };
+
+  it('stays on the contestant through a one-frame occlusion with a bystander in shot', () => {
+    let r = pickFace([contestant(), bystander], null);
+    expect(r.index).toBe(0);
+    r = pickFace([bystander], r.state); // contestant occluded
+    expect(r.index).toBeNull();
+    r = pickFace([bystander, contestant(325)], r.state);
+    expect(r.index).toBe(1);
+  });
+
+  it('re-acquires the widest face after the reset window and flags the switch', () => {
+    let r = pickFace([contestant()], null);
+    for (let i = 0; i < 15; i++) r = pickFace([bystander], r.state);
+    expect(r.state.mouth).toBeNull();
+    r = pickFace([bystander], r.state);
+    expect(r).toMatchObject({ index: 0, switched: true });
+  });
+});

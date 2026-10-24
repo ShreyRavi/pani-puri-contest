@@ -17,38 +17,40 @@ export interface PickFace {
 export interface PickState {
   /** mouth of the tracked face on the last frame it was seen; null = nothing tracked */
   mouth: PickPoint | null;
+  /** width of the tracked face on the last frame it was seen */
+  width: number;
   /** consecutive frames a different face has been at least SWITCH_RATIO wider */
   wider: number;
-  /** consecutive frames with no face at all */
+  /** consecutive frames without the tracked face */
   missing: number;
 }
 
 export interface PickResult {
   index: number | null;
   state: PickState;
+  /** the tracked person changed (wider takeover, or re-acquired after a reset) */
   switched: boolean;
 }
 
 export const SWITCH_RATIO = 1.3;
 export const SWITCH_FRAMES = 10;
 export const RESET_FRAMES = 15;
+/** A face whose mouth is farther than this many tracked-face widths from the last mouth is someone else. */
+export const MAX_JUMP = 0.5;
 
 export function pickFace(faces: PickFace[], prev: PickState | null): PickResult {
-  if (faces.length === 0) {
-    // Keep the last mouth so the same face is re-acquired near the same spot,
-    // until it has been gone long enough that the widest face should win again.
-    const missing = (prev?.missing ?? 0) + 1;
-    const mouth = missing >= RESET_FRAMES ? null : (prev?.mouth ?? null);
-    return { index: null, state: { mouth, wider: 0, missing }, switched: false };
+  const last = prev?.mouth ?? null;
+
+  let widest = -1;
+  for (let i = 0; i < faces.length; i++) if (widest < 0 || faces[i].width > faces[widest].width) widest = i;
+
+  if (!last) {
+    if (widest < 0) return { index: null, state: { mouth: null, width: 0, wider: 0, missing: (prev?.missing ?? 0) + 1 }, switched: false };
+    // Nothing tracked: lock onto the closest (widest) face. After a reset that is a new person.
+    return chosen(faces, widest, 0, prev !== null);
   }
 
-  let widest = 0;
-  for (let i = 1; i < faces.length; i++) if (faces[i].width > faces[widest].width) widest = i;
-
-  const last = prev?.mouth;
-  if (!last) return chosen(faces, widest, 0, false);
-
-  let nearest = 0;
+  let nearest = -1;
   let best = Infinity;
   for (let i = 0; i < faces.length; i++) {
     const d = Math.hypot(faces[i].mouth.x - last.x, faces[i].mouth.y - last.y);
@@ -56,6 +58,18 @@ export function pickFace(faces: PickFace[], prev: PickState | null): PickResult 
       best = d;
       nearest = i;
     }
+  }
+
+  // The tracked face is not in this frame (occluded or turned away): never hand the lock to a
+  // bystander. Keep the last position until it has been gone long enough to reset.
+  if (nearest < 0 || best > MAX_JUMP * (prev?.width || faces[nearest].width)) {
+    const missing = (prev?.missing ?? 0) + 1;
+    const reset = missing >= RESET_FRAMES;
+    return {
+      index: null,
+      state: { mouth: reset ? null : last, width: reset ? 0 : prev?.width ?? 0, wider: 0, missing },
+      switched: false,
+    };
   }
 
   const challenged = widest !== nearest && faces[widest].width >= SWITCH_RATIO * faces[nearest].width;
@@ -66,5 +80,5 @@ export function pickFace(faces: PickFace[], prev: PickState | null): PickResult 
 
 function chosen(faces: PickFace[], index: number, wider: number, switched: boolean): PickResult {
   const { x, y } = faces[index].mouth;
-  return { index, state: { mouth: { x, y }, wider, missing: 0 }, switched };
+  return { index, state: { mouth: { x, y }, width: faces[index].width, wider, missing: 0 }, switched };
 }

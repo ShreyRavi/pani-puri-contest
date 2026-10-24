@@ -17,7 +17,8 @@ export type CountMode = 'auto' | 'hybrid' | 'manual';
 export const ARMING_MS = 3000;
 export const CAP_MS = 10000;
 export const LATENCY_MARGIN_MS = 300;
-export const DEFAULT_DETECT_MS = 1500;
+/** Fallback detect window: the detector's default 1200 ms bite window + the latency margin. */
+export const DEFAULT_DETECT_MS = 1200 + LATENCY_MARGIN_MS;
 export const MAX_QUEUE = 3;
 export const RESULT_IDLE_MS = 20000;
 
@@ -210,7 +211,9 @@ export function reject(s: RoundState, now: number, mode: CountMode = 'hybrid'): 
     return { ...s, queue, rejected: s.rejected + 1, dueAt: queue.length ? due(s, now) : 0 };
   }
   if (mode === 'auto' && s.undoable && s.count > 0) {
-    return { ...s, count: s.count - 1, rejected: s.rejected + 1, undoable: false };
+    const count = s.count - 1;
+    const last = s.last && s.last.count > count ? null : s.last;
+    return { ...s, count, last, rejected: s.rejected + 1, undoable: false };
   }
   return s;
 }

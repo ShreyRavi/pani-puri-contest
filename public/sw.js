@@ -2,31 +2,53 @@
 //
 // This file is a template: on `vite build`, the precache plugin in
 // vite.config.ts rewrites dist/sw.js, replacing the PRECACHE expression with
-// the real list of emitted assets + MediaPipe files and the BUILD token with a
-// content hash, so every changed build gets a fresh cache name. Unbuilt, it is
-// still valid JS and just precaches the page.
+// the real list of emitted assets + MediaPipe files, the BUILD token with a
+// hash of that list (and file contents), and the MODELS token with a hash of the
+// model files' contents. Unbuilt, it is still valid JS and just precaches the page.
+//
+// Two caches:
+//  - ppc-<BUILD>: page + hashed assets, replaced every deploy.
+//  - ppc-models-<MODELS>: the ~24 MB MediaPipe files, kept across deploys until they change.
+//
+// A new version waits (no automatic skipWaiting) so an open stall page never
+// loses the files it is running. The page asks it to take over only when no
+// round is in progress, then reloads.
 //
 // Navigations are network-first (a redeploy is picked up when online, cache
-// when not); everything else is cache-first (hashed assets and models never
-// change under the same URL).
+// when not); everything else is cache-first.
 const BUILD = '__BUILD__';
+const MODELS = '__MODELS__';
 const CACHE = `ppc-${BUILD}`;
+const MODEL_CACHE = `ppc-models-${MODELS}`;
 const PRECACHE = self.__PRECACHE__ || ['./'];
+const isModel = (path) => path.includes('/mediapipe/');
 
 self.addEventListener('install', (e) => {
+  const models = PRECACHE.filter(isModel);
+  const app = PRECACHE.filter((p) => !isModel(p));
   e.waitUntil(
-    caches
-      .open(CACHE)
-      .then((c) => c.addAll(PRECACHE))
-      .then(() => self.skipWaiting()),
+    Promise.all([
+      caches.open(CACHE).then((c) => c.addAll(app)),
+      caches.open(MODEL_CACHE).then(async (c) => {
+        // Skip models this cache already holds from an earlier deploy.
+        const have = await Promise.all(models.map((m) => c.match(m)));
+        return c.addAll(models.filter((_, i) => !have[i]));
+      }),
+    ]),
   );
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k.startsWith('ppc-') && k !== CACHE && k !== MODEL_CACHE).map((k) => caches.delete(k))),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -40,7 +62,9 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          if (res.ok) {
+          // Only the app's own page may become the offline shell, never another URL opened in a tab.
+          const isShell = new URL('./', self.location.href).pathname === url.pathname || url.pathname.endsWith('/index.html');
+          if (res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
             const copy = res.clone();
             void caches.open(CACHE).then((c) => c.put('./', copy));
           }
@@ -51,14 +75,15 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  const store = isModel(url.pathname) ? MODEL_CACHE : CACHE;
   e.respondWith(
-    caches.match(req, { cacheName: CACHE }).then(
+    caches.match(req, { cacheName: store }).then(
       (hit) =>
         hit ||
         fetch(req).then((res) => {
           if (res.ok) {
             const copy = res.clone();
-            void caches.open(CACHE).then((c) => c.put(req, copy));
+            void caches.open(store).then((c) => c.put(req, copy));
           }
           return res;
         }),

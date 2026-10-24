@@ -42,6 +42,9 @@ function detectorFromSettings(): void {
     close: settings.close,
     cooldownMs: settings.cooldownSeconds * 1000,
     requireHand: settings.requireHand,
+    mode: settings.detection,
+    drop: settings.drop,
+    windowMs: settings.windowSeconds * 1000,
   });
   vision.hands = settings.requireHand;
 }
@@ -58,6 +61,11 @@ const setup = initSetup({
   onBoardChanged: renderBoards,
 });
 
+// Camera lost mid-round: waiting bites can't be shown or verified any more (O16).
+vision.onOffline = () => commit(R.goOffline(getRound()));
+// Back online: a half-seen bite from before the outage must not complete (R4).
+vision.onRecover = () => detector.reset({ keepCooldown: true });
+
 vision.onStatus = () => {
   if (vision.status.state === 'ready') void setup.listCameras();
 };
@@ -69,7 +77,9 @@ vision.on((r) => {
   if (r.handNear) lastHandAt = now;
 
   let round = getRound();
-  if (round.phase === 'arming' && r.ratio != null) baselineSamples.push(r.ratio);
+  // Resting baseline ignores frames with a hand at the mouth (O11).
+  if (round.phase === 'arming' && r.ratio != null && !r.handNear) baselineSamples.push(r.ratio);
+  if (r.faceSwitched) detector.reset({ keepCooldown: true }); // never finish a bite across faces (O9)
 
   const ev = detector.push({ t: r.t, ratio: r.ratio, handNear: r.handNear });
   if (!ev) return;
@@ -156,7 +166,7 @@ function commit(next: R.RoundState): void {
     setup.drawThresholds();
     beep(settings.sound, true);
   }
-  if (inPlay(before.phase) && !inPlay(next.phase)) {
+  if (R.buzzerDue(before, next)) {
     buzzer(settings.sound);
   }
   if (next.phase === 'idle' && before.phase !== 'idle') {
@@ -274,7 +284,6 @@ $('btn-fix').addEventListener('click', () => {
 });
 $('btn-back').addEventListener('click', closeSetup);
 $('btn-save').addEventListener('click', () => {
-  toast('Settings saved');
   closeSetup();
 });
 
@@ -464,7 +473,7 @@ function renderLive(r: R.RoundState, now: number): void {
   show($('stepback'), r.phase === 'live' && faceGone);
 
   $<HTMLButtonElement>('btn-confirm').disabled = !r.queue.length;
-  $<HTMLButtonElement>('btn-reject').disabled = !r.queue.length;
+  $<HTMLButtonElement>('btn-reject').disabled = !r.queue.length && !(settings.mode === 'auto' && r.undoable && r.count > 0);
   text($('btn-pause'), r.phase === 'paused' ? 'Resume (P)' : 'Pause (P)');
   const armed = now < escArmedUntil;
   const end = $('btn-end');
@@ -507,5 +516,38 @@ requestAnimationFrame(frame);
 void vision.start(settings.cameraId);
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  void registerServiceWorker();
+}
+
+/** A new version waits; let it take over (and reload) only when no round is running. */
+async function registerServiceWorker(): Promise<void> {
+  // First visit: the new worker claims the page, but nothing old is running, so no reload.
+  let hadController = !!navigator.serviceWorker.controller;
+  const reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  let pendingReload = false;
+  const reloadWhenSafe = () => {
+    const busy = R.isInRound(getRound()) || setupOpen || $<HTMLDialogElement>('score-dialog').open;
+    if (pendingReload && !busy) location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) {
+      hadController = true; // first claim of a fresh tab; later updates must reload
+      return;
+    }
+    pendingReload = true;
+    reloadWhenSafe();
+  });
+  const promote = () => {
+    if (reg.waiting && navigator.serviceWorker.controller && !R.isInRound(getRound())) {
+      reg.waiting.postMessage({ type: 'skip-waiting' });
+    }
+  };
+  reg.addEventListener('updatefound', () => {
+    reg.installing?.addEventListener('statechange', promote);
+  });
+  promote();
+  window.setInterval(() => {
+    promote(); // picks the next idle moment if a round was running
+    reloadWhenSafe();
+  }, 15000);
 }

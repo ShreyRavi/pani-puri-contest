@@ -43,5 +43,6 @@ export interface VisionResult {
 
 export type FromWorker =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
-  | { type: 'error'; message: string }
+  /** fatal: init failed. Non-fatal: one bad frame or an optional model (hands) failed. */
+  | { type: 'error'; message: string; fatal: boolean; kind: 'init' | 'frame' | 'hand' }
   | VisionResult;

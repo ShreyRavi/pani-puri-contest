@@ -25,7 +25,8 @@ export function hhmmss(d = new Date()): string {
 let toastTimer = 0;
 export function toast(message: string): void {
   const el = $('toast');
-  el.textContent = message;
+  $('toast-text').textContent = message;
+  $('toast-action').hidden = true;
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (el.hidden = true), 2200);
