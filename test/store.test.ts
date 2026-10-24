@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest';
+import { IDLE, start, tick } from '../src/round';
+import {
+  csvCell,
+  isStale,
+  normalizeResult,
+  normalizeRound,
+  rankOf,
+  ranked,
+  resultsCsv,
+  shortOfBoard,
+  STALE_ROUND_MS,
+  type Result,
+} from '../src/store';
+
+const res = (name: string, score: number, at: number, extra: Partial<Result> = {}): Result => ({
+  id: `${name}-${at}`,
+  name,
+  score,
+  rejected: 0,
+  notCounted: 0,
+  seconds: 60,
+  at,
+  ...extra,
+});
+
+describe('ranking', () => {
+  const board = [res('Arjun', 12, 2), res('Priya', 14, 1), res('Meera', 12, 1)];
+
+  it('sorts by score, ties to whoever finished first', () => {
+    expect(ranked(board).map((r) => r.name)).toEqual(['Priya', 'Meera', 'Arjun']);
+    expect(rankOf('Arjun-2', board)).toBe(3);
+    expect(rankOf('missing', board)).toBe(0);
+  });
+
+  it('computes puris short of the top 10', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => res(`P${i}`, 20 - i, i));
+    const me = res('Me', 7, 100);
+    expect(shortOfBoard(7, me.id, [...ten, me])).toBe(5); // 10th is 11 -> need 12
+    expect(shortOfBoard(7, me.id, [me])).toBe(0);
+  });
+});
+
+describe('CSV (R6, DD10)', () => {
+  it('neutralises formula-looking names and quotes when needed', () => {
+    expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(csvCell('@SUM')).toBe("'@SUM");
+    expect(csvCell('-Priya')).toBe("'-Priya");
+    expect(csvCell('Priya')).toBe('Priya');
+    expect(csvCell(-1)).toBe('-1');
+    expect(csvCell('a,b')).toBe('"a,b"');
+  });
+
+  it('includes a not_counted column', () => {
+    const csv = resultsCsv([res('Priya', 14, 0, { notCounted: 2, rejected: 1 })]);
+    expect(csv.split('\n')[0]).toBe('rank,name,puris,rejected,not_counted,seconds,finished_at');
+    expect(csv.split('\n')[1]).toMatch(/^1,Priya,14,1,2,60,/);
+  });
+});
+
+describe('load guard (R9, O15)', () => {
+  it('converts an old single pending bite into the queue', () => {
+    const old = { ...IDLE, phase: 'live', pending: { at: 5, peak: 0.6, confidence: 0.9, hand: true }, endsAt: 99 };
+    delete (old as Record<string, unknown>).queue;
+    const s = normalizeRound(old);
+    expect(s.queue).toEqual([{ at: 5, openedAt: 5, peak: 0.6, confidence: 0.9, hand: true }]);
+    expect(s.notCounted).toBe(0);
+    expect('pending' in s).toBe(false);
+  });
+
+  it('treats null pending and junk as empty', () => {
+    expect(normalizeRound({ ...IDLE, pending: null }).queue).toEqual([]);
+    expect(normalizeRound('garbage').phase).toBe('idle');
+    expect(normalizeRound(null).queue).toEqual([]);
+  });
+
+  it('defaults savedAt to endsAt and fills buzzer windows', () => {
+    const s = normalizeRound({ ...IDLE, phase: 'buzzer', endsAt: 1000, detectUntil: 0, capAt: 0 });
+    expect(s).toMatchObject({ savedAt: 1000, detectUntil: 2500, capAt: 11000 });
+  });
+
+  it('fills notCounted on old results', () => {
+    expect(normalizeResult({ id: 'a', name: 'A', score: 3, rejected: 1, seconds: 60, at: 1 }).notCounted).toBe(0);
+  });
+});
+
+describe('stale rounds (O12)', () => {
+  it('discards rounds more than 5 minutes past their end', () => {
+    const live = tick(start('A', 60000, 0), 3000);
+    expect(isStale(live, 0, live.endsAt + STALE_ROUND_MS)).toBe(false);
+    expect(isStale(live, 0, live.endsAt + STALE_ROUND_MS + 1)).toBe(true);
+    expect(isStale(IDLE, 0, 1e12)).toBe(false);
+  });
+
+  it('uses the save time for paused rounds', () => {
+    const paused = { ...tick(start('A', 60000, 0), 3000), phase: 'paused' as const, pausedFrom: 'live' as const };
+    expect(isStale(paused, 10_000, 10_000 + STALE_ROUND_MS + 1)).toBe(true);
+  });
+});
