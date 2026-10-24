@@ -2,7 +2,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { buildPrecacheList, renderServiceWorker } from './src/build/precache';
+import { buildPrecacheList, renderServiceWorker } from './src/build/precache.ts';
 
 async function walk(dir: string): Promise<string[]> {
   const out: string[] = [];
