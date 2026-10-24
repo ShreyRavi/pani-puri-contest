@@ -3,6 +3,7 @@
 
 import { FaceLandmarker, FilesetResolver, HandLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { mouthRatio } from '../detector';
+import { pickFace, type PickState } from './pick';
 import type { FromWorker, Point, ToWorker } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -22,6 +23,7 @@ let hand: HandLandmarker | null = null;
 let handLoading: Promise<void> | null = null;
 let delegate: 'GPU' | 'CPU' = 'GPU';
 let lastTs = 0;
+let pickState: PickState | null = null;
 const lumaCanvas = new OffscreenCanvas(32, 24);
 const lumaCtx = lumaCanvas.getContext('2d', { willReadFrequently: true })!;
 
@@ -45,7 +47,7 @@ async function init(b: string, hands: boolean): Promise<void> {
     FaceLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/face_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numFaces: 1,
+      numFaces: 3,
       minFaceDetectionConfidence: 0.5,
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
@@ -89,19 +91,35 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
   const px = (p: NormalizedLandmark): Point => ({ x: p.x * w, y: p.y * h });
 
   const fr = face.detectForVideo(bitmap, ts);
-  const lm = fr.faceLandmarks[0];
+  const faces = fr.faceLandmarks.map((f) => {
+    const up = px(f[13]);
+    const lo = px(f[14]);
+    const l = px(f[61]);
+    const r = px(f[291]);
+    const fl = px(f[234]);
+    const rt = px(f[454]);
+    return {
+      lm: f,
+      up,
+      lo,
+      l,
+      r,
+      mouth: { x: (l.x + r.x) / 2, y: (up.y + lo.y) / 2 },
+      width: Math.hypot(rt.x - fl.x, rt.y - fl.y),
+    };
+  });
+  const pick = pickFace(faces, pickState);
+  pickState = pick.state;
+  const chosen = pick.index == null ? null : faces[pick.index];
+  const lm = chosen?.lm;
   let ratio: number | null = null;
   let mouth: Point | null = null;
   let faceWidth = 0;
   let lips: Point[] = [];
-  if (lm) {
-    const up = px(lm[13]);
-    const lo = px(lm[14]);
-    const l = px(lm[61]);
-    const r = px(lm[291]);
-    ratio = mouthRatio(up, lo, l, r);
-    mouth = { x: (l.x + r.x) / 2, y: (up.y + lo.y) / 2 };
-    faceWidth = Math.hypot(px(lm[454]).x - px(lm[234]).x, px(lm[454]).y - px(lm[234]).y);
+  if (chosen && lm) {
+    ratio = mouthRatio(chosen.up, chosen.lo, chosen.l, chosen.r);
+    mouth = chosen.mouth;
+    faceWidth = chosen.width;
     lips = LIPS.map((i) => ({ x: lm[i].x, y: lm[i].y }));
   }
 
@@ -127,6 +145,7 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
     type: 'result',
     t,
     faceFound: !!lm,
+    faceSwitched: pick.switched,
     ratio,
     mouth,
     faceWidth,

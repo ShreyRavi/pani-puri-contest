@@ -25,6 +25,8 @@ export interface VisionResult {
   type: 'result';
   t: number;
   faceFound: boolean;
+  /** true on the frame the tracked face changed to a different (wider) person */
+  faceSwitched: boolean;
   ratio: number | null;
   /** mouth center in frame px (640x480) */
   mouth: Point | null;
