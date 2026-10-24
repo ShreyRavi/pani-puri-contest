@@ -9,8 +9,11 @@ export function text(el: HTMLElement, value: string): void {
   if (el.textContent !== value) el.textContent = value;
 }
 
-export function show(el: HTMLElement, visible: boolean): void {
-  if (el.hidden === visible) el.hidden = !visible;
+export function show(el: HTMLElement | SVGElement, visible: boolean): void {
+  if (el instanceof HTMLElement) {
+    if (el.hidden === visible) el.hidden = !visible;
+  } else if (visible) el.removeAttribute('hidden');
+  else el.setAttribute('hidden', '');
 }
 
 export function clock(ms: number): string {
@@ -22,12 +25,40 @@ export function hhmmss(d = new Date()): string {
   return d.toTimeString().slice(0, 8);
 }
 
+export interface ToastAction {
+  label: string;
+  run: () => void;
+  /** how long the toast (and its action) stays up */
+  ms?: number;
+}
+
 let toastTimer = 0;
-export function toast(message: string): void {
+/** Short operator message at the top of the TV safe area, optionally with one action button. */
+export function toast(message: string, action?: ToastAction): void {
   const el = $('toast');
+  const btn = $<HTMLButtonElement>('toast-action');
   $('toast-text').textContent = message;
-  $('toast-action').hidden = true;
+  btn.hidden = !action;
+  btn.onclick = null;
+  if (action) {
+    btn.textContent = action.label;
+    btn.onclick = () => {
+      el.hidden = true;
+      action.run();
+    };
+  }
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), 2200);
+  toastTimer = window.setTimeout(() => (el.hidden = true), Math.max(1000, action?.ms ?? 2200));
+}
+
+/** Sticky notice that stays until the next key press (DD8, O22). Pass null to dismiss. */
+export function notice(message: string | null): void {
+  const el = $('notice');
+  if (message == null) {
+    if (!el.hidden) el.hidden = true;
+    return;
+  }
+  el.textContent = message;
+  el.hidden = false;
 }

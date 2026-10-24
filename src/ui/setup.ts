@@ -1,6 +1,6 @@
 // Setup + calibration screen (operator only).
 
-import type { BiteDetector, DetectorEvent } from '../detector';
+import type { BiteDetector, DetectorEvent, DetectorMode } from '../detector';
 import { allResults, clearResults, ranked, removeResult, resultsCsv, saveSettings, settings, updateResult, type Settings } from '../store';
 import type { CountMode } from '../round';
 import type { Vision } from '../vision/client';
@@ -8,6 +8,7 @@ import type { VisionResult } from '../vision/protocol';
 import { $, hhmmss, show, text, toast } from './dom';
 
 const LOG_LINES = 6;
+const DIALOG_IDLE_MS = 60_000;
 
 export interface SetupDeps {
   vision: Vision;
@@ -24,6 +25,11 @@ export function initSetup(deps: SetupDeps) {
   const sens = $<HTMLInputElement>('set-sens');
   const cooldown = $<HTMLInputElement>('set-cooldown');
   const hand = $<HTMLInputElement>('set-hand');
+  const eventLine = $<HTMLInputElement>('set-event');
+  const drop = $<HTMLInputElement>('set-drop');
+  const close = $<HTMLInputElement>('set-close');
+  const windowEl = $<HTMLInputElement>('set-window');
+  const detections = document.querySelectorAll<HTMLInputElement>('input[name="detection"]');
   const modes = document.querySelectorAll<HTMLInputElement>('input[name="mode"]');
   const log = $<HTMLUListElement>('set-log');
   let logStarted = false;
@@ -35,8 +41,20 @@ export function initSetup(deps: SetupDeps) {
     sens.value = String(settings.open);
     cooldown.value = String(settings.cooldownSeconds);
     hand.checked = settings.requireHand;
+    if (document.activeElement !== eventLine) eventLine.value = settings.eventLine;
+    drop.value = String(settings.drop);
+    close.value = String(settings.close);
+    windowEl.value = String(settings.windowSeconds);
     modes.forEach((m) => (m.checked = m.value === settings.mode));
+    detections.forEach((m) => (m.checked = m.value === settings.detection));
+    // One slot, two sliders: Absolute tunes the close line, Relative tunes the drop (DD20).
+    const relative = settings.detection === 'relative';
+    show($('field-drop'), relative);
+    show($('field-close'), !relative);
     text($('set-sens-val'), settings.open.toFixed(2));
+    text($('set-drop-val'), settings.drop.toFixed(2));
+    text($('set-close-val'), settings.close.toFixed(2));
+    text($('set-window-val'), `${settings.windowSeconds.toFixed(1)} s`);
     text($('set-cooldown-val'), `${settings.cooldownSeconds.toFixed(1)} s`);
     drawThresholds();
   }
@@ -61,6 +79,11 @@ export function initSetup(deps: SetupDeps) {
   sens.addEventListener('input', () => change({ open: Number(sens.value) }));
   cooldown.addEventListener('input', () => change({ cooldownSeconds: Number(cooldown.value) }));
   hand.addEventListener('change', () => change({ requireHand: hand.checked }));
+  eventLine.addEventListener('input', () => change({ eventLine: eventLine.value.slice(0, 40) }));
+  drop.addEventListener('input', () => change({ drop: Number(drop.value) }));
+  close.addEventListener('input', () => change({ close: Number(close.value) }));
+  windowEl.addEventListener('input', () => change({ windowSeconds: Number(windowEl.value) }));
+  detections.forEach((m) => m.addEventListener('change', () => m.checked && change({ detection: m.value as DetectorMode })));
   modes.forEach((m) => m.addEventListener('change', () => m.checked && change({ mode: m.value as CountMode })));
 
   $('btn-csv').addEventListener('click', () => {
@@ -101,16 +124,25 @@ export function initSetup(deps: SetupDeps) {
     if (!list.length) cam.append(new Option('No camera found', ''));
   }
 
+  /** Meter lines show the rule actually in force: a fixed close line, or Relative's moving "peak minus drop" (DD20). */
   function drawThresholds(): void {
-    const close = deps.detector.closeThreshold;
+    const st = deps.detector.state;
     const open = settings.open;
-    $('meter-close-line').style.left = `${close * 100}%`;
-    $('meter-open-line').style.left = `${open * 100}%`;
+    const closeAt = Number.isFinite(st.closeLine) ? st.closeLine : null;
     const cl = $('meter-close-label');
     const ol = $('meter-open-label');
-    cl.style.left = `${close * 100}%`;
+    const closeLine = $('meter-close-line');
+    show(closeLine, closeAt != null);
+    closeLine.classList.toggle('dashed', st.mode === 'relative');
+    if (closeAt != null) {
+      const pct = `${Math.max(0, closeAt) * 100}%`;
+      closeLine.style.left = pct;
+      cl.style.left = pct;
+    }
+    $('meter-open-line').style.left = `${open * 100}%`;
     ol.style.left = `${open * 100}%`;
-    text(cl, `close ${close.toFixed(2)}`);
+    show(cl, closeAt != null);
+    text(cl, st.mode === 'relative' ? `drop ${settings.drop.toFixed(2)}` : `close ${(closeAt ?? 0).toFixed(2)}`);
     text(ol, `open ${open.toFixed(2)}`);
   }
 
@@ -144,7 +176,7 @@ export function initSetup(deps: SetupDeps) {
     let cls = '';
     if (v.status.state === 'error') {
       cls = 'bad';
-      text(label, v.status.message);
+      text(label, v.status.message); // named cause: blocked, busy, no camera, model, worker, stalled
     } else if (v.status.state !== 'ready') {
       text(label, 'Loading face model…');
     } else if (r?.faceFound) {
@@ -161,8 +193,13 @@ export function initSetup(deps: SetupDeps) {
     text($('meter-value'), ratio == null ? '–' : ratio.toFixed(2));
     $('meter-fill').style.width = `${Math.min(1, ratio ?? 0) * 100}%`;
     $('meter').setAttribute('aria-valuenow', (ratio ?? 0).toFixed(2));
+    const waiting = deps.detector.state.phase !== 'closed';
+    show($('meter-wait'), waiting);
+    text($('meter-wait'), settings.detection === 'relative' ? 'Waiting for drop' : 'Waiting for close');
+    $('meter').classList.toggle('waiting', waiting);
+    if (settings.detection === 'relative') drawThresholds(); // the close line follows the peak
 
-    show($('set-dark'), v.status.state === 'ready' && v.tooDark());
+    show($('set-dark'), v.status.state === 'ready' && v.tooDark('setup'));
     const lat = v.latency();
     const latEl = $('set-latency');
     if (lat.p50 > 0) {
@@ -202,7 +239,17 @@ export function openScoreDialog(id: string | null, onDone: () => void): void {
       dialog.close('deleted');
     }
   };
+  // A forgotten dialog must not hold the stall: close unsaved after a minute without input.
+  let idle = 0;
+  const poke = () => {
+    clearTimeout(idle);
+    idle = window.setTimeout(() => dialog.open && dialog.close(''), DIALOG_IDLE_MS);
+  };
+  dialog.oninput = poke;
+  dialog.onkeydown = poke;
+  poke();
   dialog.onclose = () => {
+    clearTimeout(idle);
     const r = current();
     if (dialog.returnValue === 'save' && r) {
       const score = Math.max(0, Math.round(Number(value.value) || 0));
