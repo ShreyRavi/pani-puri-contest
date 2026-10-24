@@ -4,3 +4,5 @@ public/mediapipe
 .gstack
 .DS_Store
 .claude/
+.vercel
+.env*
