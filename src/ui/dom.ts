@@ -52,6 +52,11 @@ export function toast(message: string, action?: ToastAction): void {
   toastTimer = window.setTimeout(() => (el.hidden = true), Math.max(1000, action?.ms ?? 2200));
 }
 
+/** True while a toast with an action button is on screen. */
+export function toastActionShowing(): boolean {
+  return !$('toast').hidden && !$('toast-action').hidden;
+}
+
 /** Sticky notice that stays until the next key press (DD8, O22). Pass null to dismiss. */
 export function notice(message: string | null): void {
   const el = $('notice');

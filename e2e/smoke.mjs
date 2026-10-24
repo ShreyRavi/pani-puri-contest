@@ -119,15 +119,16 @@ try {
     const now = await page.evaluate(() => Date.now());
     const bite = (dt) => ({ at: now - dt, openedAt: now - dt - 300, peak: 0.6, confidence: 0.8, hand: false });
     await seed(
-      { ...IDLE, phase: 'live', name: 'Arjun', count: 2, endsAt: now + 40000, autoConfirmMs: 5000, queue: [bite(400), bite(100)], dueAt: now + 4600, savedAt: now },
-      { mode: 'hybrid', autoConfirmSeconds: 5 },
+      // Auto-confirm far enough out that a slow boot can't confirm a bite before the test does.
+      { ...IDLE, phase: 'live', name: 'Arjun', count: 2, endsAt: now + 50000, autoConfirmMs: 60000, queue: [bite(400), bite(100)], dueAt: now + 59000, savedAt: now },
+      { mode: 'hybrid', autoConfirmSeconds: 60 },
     );
     await expectVisible(page, '#bite-banner');
     await expectText(page, '#bite-more', '+1 more');
     await expectVisible(page, '#auto-bar');
     await page.keyboard.press('Escape');
     await expectText(page, '#btn-end', 'Press Esc again to end (2 bites waiting)');
-    await page.waitForTimeout(2100);
+    await expectText(page, '#btn-end', 'End round (Esc)'); // Esc arm lapses after 2 s
     await page.keyboard.press(' ');
     await expectText(page, '#live-count', '3');
   });
@@ -144,7 +145,20 @@ try {
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
     await expectVisible(page, '#view-result');
+    await page.waitForTimeout(1600); // a quick extra Esc can't skip the score reveal
+    await page.click('#btn-discard');
+    await expectVisible(page, '#view-idle');
+  });
+
+  await check('a pending Discard undo cannot replace the next round', async () => {
+    await page.fill('#name-input', 'Kiran');
     await page.keyboard.press('Enter');
+    await expectVisible(page, '#arming');
+    await page.keyboard.press('ControlOrMeta+z');
+    await page.waitForTimeout(200);
+    await expectVisible(page, '#arming');
+    await expectText(page, '#arming-name', 'Kiran');
+    await page.keyboard.press('Escape');
     await expectVisible(page, '#view-idle');
   });
 

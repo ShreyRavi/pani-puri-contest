@@ -24,7 +24,7 @@ import {
   type Settings,
 } from './store';
 import { chaseLine, renderBoard } from './ui/board';
-import { $, clock, notice, show, text, toast } from './ui/dom';
+import { $, clock, notice, show, text, toast, toastActionShowing } from './ui/dom';
 import { CameraStage } from './ui/overlay';
 import { initSetup, openScoreDialog } from './ui/setup';
 import { Vision } from './vision/client';
@@ -239,6 +239,10 @@ function startRound(): void {
   unlockAudio();
   enterFullscreen();
   baselineSamples = [];
+  if (undo && !undo.rerun) {
+    undo = null; // a new round closes a pending Discard undo
+    $('toast').hidden = true;
+  }
   input.blur();
   commit(R.start(name, settings.roundSeconds * 1000, Date.now(), roundOptions()));
 }
@@ -261,7 +265,10 @@ function offerUndo(u: Undo, message: string): void {
 function doUndo(): void {
   const u = undo;
   if (!u || Date.now() > u.until) return;
-  if (u.rerun && getRound().phase !== 'arming') return;
+  // Only from the screen it was offered on: never over the next contestant's round.
+  if (u.rerun ? getRound().phase !== 'arming' : getRound().phase !== 'idle') return;
+  // A later toast replaced the Undo button: the offer is gone with it.
+  if (!toastActionShowing() && !(u.rerun && getRound().phase === 'arming')) return;
   undo = null;
   restoreResult(u.result);
   commit({ ...u.round, resultAt: Date.now() });
@@ -450,6 +457,9 @@ function onKey(e: KeyboardEvent): void {
     unlockAudio();
     const now = Date.now();
     switch (k) {
+      case 'Enter':
+        e.preventDefault(); // never click the strip button the trackpad last focused
+        return;
       case ' ':
         e.preventDefault();
         return commit(R.confirm(r, now));
@@ -485,6 +495,8 @@ function onKey(e: KeyboardEvent): void {
         return next();
       case 'Escape':
         e.preventDefault();
+        // A third quick Esc after ending early must not skip the score reveal.
+        if (Date.now() - r.resultAt < 1500) return;
         return next();
       case '+':
       case '=':
