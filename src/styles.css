@@ -214,6 +214,7 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .bite-left { display: flex; align-items: center; gap: 16px; flex: none; white-space: nowrap; }
 .bite-title { font-family: var(--display); font-size: 44px; }
 .bite-help { flex: 1 1 420px; font-size: 28px; font-weight: 700; text-align: right; text-wrap: balance; } /* wraps under the title rather than squeezing */
+.bite-help.wrapped { text-align: left; } /* on its own line, it reads under the title */
 .stepback {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 20px;
   background: var(--chilli-surface); color: var(--cream); border-radius: 24px; padding: 28px 44px; font-family: var(--display); font-size: 64px;

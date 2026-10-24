@@ -3,7 +3,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { CSP } from './src/build/csp.ts';
+import { SECURITY_HEADERS } from './src/build/csp.ts';
 import { buildHashInput, buildPrecacheList, modelHashInput, renderServiceWorker } from './src/build/precache.ts';
 
 const sha1 = (data: string | Buffer) => createHash('sha1').update(data).digest('hex');
@@ -43,6 +43,6 @@ function precacheManifest(): Plugin {
 export default defineConfig({
   plugins: [precacheManifest()],
   worker: { format: 'es' },
-  preview: { headers: { 'Content-Security-Policy': CSP } },
+  preview: { headers: SECURITY_HEADERS },
   test: { environment: 'node', include: ['test/**/*.test.ts'], exclude: ['.claude/**', 'node_modules/**', 'dist/**'] },
 });

@@ -111,8 +111,15 @@ let results: Result[] = (Array.isArray(rawResults) ? rawResults : [])
   .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i);
 let round: RoundState = IDLE;
 let expired: { name: string; savedAt: number; saved: number } | null = null;
+let recovered = false;
 
-{
+/**
+ * Restore the round saved by the last page, finishing one that is too old. Writes storage, so only the
+ * tab that owns the stall calls it (main.ts boot, after the tab lock); runs once.
+ */
+export function recoverSavedRound(): void {
+  if (recovered) return;
+  recovered = true;
   const loaded = normalizeRound(read<unknown>(KEYS.round, {}));
   const { savedAt, ...r } = loaded;
   if (isStale(r, savedAt, Date.now())) {
@@ -163,10 +170,13 @@ export function allResults(): readonly Result[] {
   return results;
 }
 
-let rankedCache: { from: readonly Result[]; list: Result[] } | null = null;
+let rankedCache: { from: readonly Result[]; list: readonly Result[] } | null = null;
 
-/** Highest score first; ties go to whoever got there first. Cached per results array (the TV loop asks every frame). */
-export function ranked(list: readonly Result[] = results): Result[] {
+/**
+ * Highest score first; ties go to whoever got there first. The TV loop asks every frame, so the sorted
+ * copy is cached until the results array changes (every write replaces it). Shared: callers must not mutate.
+ */
+export function ranked(list: readonly Result[] = results): readonly Result[] {
   if (rankedCache?.from === list) return rankedCache.list;
   const sorted = [...list].sort((a, b) => b.score - a.score || a.at - b.at);
   rankedCache = { from: list, list: sorted };
@@ -179,7 +189,7 @@ export function rankOf(id: string, list: readonly Result[] = results): number {
 
 /** Puris needed to make the top 10, honoring the earlier-wins tiebreak (DD11). */
 export function shortOfBoard(score: number, id: string, list: readonly Result[] = results): number {
-  const others = ranked(list.filter((r) => r.id !== id));
+  const others = ranked(list).filter((r) => r.id !== id); // filter the cached order rather than re-sort
   const tenth = others[9];
   return tenth ? Math.max(0, tenth.score - score + 1) : 0;
 }

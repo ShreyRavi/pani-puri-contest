@@ -2,10 +2,12 @@
 // Usage: npm run e2e   (builds, serves dist on :4174, runs, then tests offline with the server stopped)
 // Needs Google Chrome installed; set CHROME_PATH to use another Chromium.
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
 
 const PORT = 4174;
+const PROXY_PORT = 4184;
 const URL = `http://127.0.0.1:${PORT}/`;
 const results = [];
 let server;
@@ -67,6 +69,9 @@ try {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Any Content-Security-Policy violation (a blocked worker, wasm or model fetch) counts as a page error.
+  await ctx.addInitScript(() => addEventListener('securitypolicyviolation', (e) => console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`)));
+  page.on('console', (m) => m.type() === 'error' && m.text().startsWith('CSP violation') && errors.push(m.text()));
   const text = (s) => page.textContent(s);
   const seed = async (round, settings) => {
     await page.evaluate(([r, s]) => {
@@ -77,8 +82,13 @@ try {
     await page.waitForSelector('#view-live:not([hidden]), #view-idle:not([hidden]), #view-result:not([hidden])');
   };
 
-  await page.goto(URL);
+  const first = await page.goto(URL);
   await page.waitForSelector('#view-idle:not([hidden])');
+  await check('serves the Content-Security-Policy that keeps frames on the laptop', async () => {
+    const csp = first.headers()['content-security-policy'] ?? '';
+    assert.match(csp, /connect-src 'self'/);
+    assert.match(csp, /form-action 'none'/);
+  });
 
   await check('keyboard loop: name, countdown, +/-, end twice, result', async () => {
     await page.fill('#name-input', 'Priya');
@@ -383,15 +393,71 @@ try {
 
   // Value: protects=a second tab of the app shows "already open" and never boots; fails_when=the stall lock is removed or
   //   not checked; why_new=new behavior; seam=none; no_claim=two separate browser profiles (locks are per profile)
-  await check('a second tab shows "already open" and does not take over', async () => {
+  await check('a second tab shows "already open", writes nothing and does not take over', async () => {
+    const stored = () => page.evaluate(() => [localStorage.getItem('ppc.results.v1'), localStorage.getItem('ppc.round.v1')]);
+    const before = await stored();
     const second = await ctx.newPage();
+    await second.addInitScript(() => {
+      window.__swRegistered = 0;
+      const sw = navigator.serviceWorker;
+      if (sw) {
+        const register = sw.register.bind(sw);
+        sw.register = (...a) => (window.__swRegistered++, register(...a));
+      }
+    });
     await second.goto(URL);
     await second.waitForSelector('#other-tab', { state: 'visible', timeout: 5000 });
+    // Keys, focus and an implicit form submit must all be dead under the overlay.
+    await second.evaluate(() => document.getElementById('name-input').focus()); // inert: focus must not land
+    await second.keyboard.type('Zed');
+    await second.keyboard.press('Enter');
     await second.keyboard.press('Escape');
     await second.keyboard.press('s');
     assert.ok(await second.isHidden('#view-setup'), 'the second tab reacted to a key');
+    assert.equal(await second.evaluate(() => window.__swRegistered), 0, 'the second tab registered the service worker');
+    assert.deepEqual(await stored(), before, 'the second tab wrote to storage');
+    await second.reload();
+    await second.waitForSelector('#other-tab', { state: 'visible', timeout: 5000 });
     await second.close();
     await page.bringToFront();
+  });
+
+  // Value: protects=a later toast replacing the Undo button ends a Discard undo; fails_when=doUndo stops checking that its
+  //   toast is still up; why_new=undo checks never replaced the toast; seam=none (the board-empty toast is real UI);
+  //   no_claim=camera toasts (same code path, not driven here)
+  await check('a later toast ends a Discard undo', async () => {
+    await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
+    await page.reload();
+    await expectVisible(page, '#view-idle');
+    await playRound('Nila', 1);
+    await page.click('#btn-discard'); // the board is empty again
+    await expectVisible(page, '#view-idle');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('s');
+    await expectVisible(page, '#view-setup');
+    await page.click('#btn-clear');
+    await expectText(page, '#toast-text', 'Board is already empty');
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-idle');
+    await page.keyboard.press('ControlOrMeta+z');
+    await page.waitForTimeout(200); // gstack-timing-ok: negative check, a wrongful restore gets a few frames
+    await expectVisible(page, '#view-idle');
+    assert.deepEqual(await board('Nila'), []);
+  });
+
+  // Value: protects=a Re-run undo survives a later toast for the whole countdown; fails_when=the toast-showing check is
+  //   applied to re-run undos too; why_new=re-run undo checks never replaced the toast; seam=none (clicks the existing
+  //   Setup control, hidden during the round, which answers with a real toast); no_claim=camera toasts
+  await check('a Re-run undo survives a later toast during the countdown', async () => {
+    await playRound('Om', 2);
+    await page.click('#btn-rerun');
+    await expectVisible(page, '#arming');
+    await page.evaluate(() => document.getElementById('idle-setup').click());
+    await expectText(page, '#toast-text', 'Setup opens after this round');
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-result');
+    assert.deepEqual(await board('Om'), [2]);
+    await backToIdle();
   });
 
   const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
@@ -419,6 +485,44 @@ try {
   });
   await denied.close();
 
+
+  // Value: protects=on a slow network the service worker serves the cached page after ~3 s; fails_when=the navigation
+  //   timeout is removed or never falls back; why_new=the offline check only covers an instant network failure;
+  //   seam=none (a delaying proxy in front of the preview server); no_claim=captive-portal HTML responses
+  await check('slow network: the cached page appears after the 3 s timeout', async () => {
+    let delayMs = 0;
+    const proxy = http.createServer((req, res) => {
+      const forward = () => {
+        const up = http.request({ host: '127.0.0.1', port: PORT, path: req.url, method: req.method, headers: req.headers }, (r) => {
+          res.writeHead(r.statusCode ?? 502, r.headers);
+          r.pipe(res);
+        });
+        up.on('error', () => res.destroy());
+        req.pipe(up);
+      };
+      const isPage = req.url === '/' || req.url === '/index.html';
+      if (isPage && delayMs) setTimeout(forward, delayMs);
+      else forward();
+    });
+    await new Promise((r) => proxy.listen(PROXY_PORT, '127.0.0.1', r));
+    const slowCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const sp = await slowCtx.newPage();
+    try {
+      const origin = `http://127.0.0.1:${PROXY_PORT}/`;
+      await sp.goto(origin);
+      await sp.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30000 });
+      await sp.waitForFunction(async () => (await caches.keys()).some((k) => /^ppc-[0-9a-f]+$/.test(k)), null, { timeout: 30000 });
+      delayMs = 15000;
+      const t0 = Date.now();
+      await sp.reload({ waitUntil: 'domcontentloaded', timeout: 12000 });
+      await sp.waitForSelector('#view-idle:not([hidden]), #other-tab:not([hidden])', { timeout: 12000 });
+      const took = Date.now() - t0;
+      assert.ok(took >= 2500 && took < 8000, `page took ${took} ms (expected the ~3 s cache fallback)`);
+    } finally {
+      await slowCtx.close();
+      await new Promise((r) => proxy.close(r));
+    }
+  });
 
   await page.bringToFront();
   // Start the offline check from a known idle state, whatever earlier checks left behind.

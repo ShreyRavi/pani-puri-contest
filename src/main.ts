@@ -13,6 +13,7 @@ import {
   allResults,
   getRound,
   rankOf,
+  recoverSavedRound,
   removeResult,
   restoreResult,
   setRound,
@@ -24,7 +25,8 @@ import {
   type Settings,
 } from './store';
 import { chaseLine, renderBoard } from './ui/board';
-import { $, clock, hideToast, notice, show, text, toast, toastActionShowing } from './ui/dom';
+import { $, clock, hideToast, notice, plural, show, text, toast, toastActionShowing } from './ui/dom';
+import { updateBlocked } from './update';
 import { CameraStage } from './ui/overlay';
 import { initSetup, openScoreDialog } from './ui/setup';
 import { Vision } from './vision/client';
@@ -34,8 +36,6 @@ const FACE_LOST_MS = 3000;
 const ESC_CONFIRM_MS = 2000;
 const NO_FACE_HINT_MS = 1000;
 const UNDO_MS = 5000;
-/** This tab holds the stall lock (see claimTab); until then it reacts to nothing. */
-let claimed = false;
 /** A third quick Esc right after ending early must not skip the score reveal. */
 const RESULT_ESC_GUARD_MS = 1500;
 const SW_UPDATE_POLL_MS = 15000;
@@ -408,7 +408,6 @@ $('btn-save').addEventListener('click', closeSetup);
 
 // ---------- hotkeys ----------
 function onKey(e: KeyboardEvent): void {
-  if (!claimed) return; // another tab owns the stall
   // The sticky notice goes away on any key, and the key still does its normal job (O22).
   notice(null);
   const r = getRound();
@@ -441,6 +440,7 @@ function onKey(e: KeyboardEvent): void {
 
   if (view === 'idle') {
     if (k === 'Escape' && target.id === 'name-input') return void target.blur();
+    if (target instanceof HTMLButtonElement && (k === 'Enter' || k === ' ')) return; // a focused button (Undo, Setup) acts
     if (!typing && (k === 's' || k === 'S')) {
       e.preventDefault();
       return openSetup();
@@ -517,12 +517,11 @@ function onKey(e: KeyboardEvent): void {
     }
   }
 }
-addEventListener('keydown', onKey);
 // Space must never also click whatever button the trackpad last focused.
-addEventListener('keyup', (e: KeyboardEvent) => {
+function onKeyUp(e: KeyboardEvent): void {
   const v = viewFor(getRound());
   if (e.key === ' ' && (v === 'live' || v === 'result')) e.preventDefault();
-});
+}
 
 // ---------- render loop ----------
 let lastArmDigit = 0;
@@ -532,12 +531,13 @@ function frame(): void {
   const now = Date.now();
   // Commit the ticked state first: a round that ended while nobody was watching (reload, hidden
   // tab) must be saved before the result screen's idle timeout can clear it.
+  if (undo && now > undo.until) undo = null; // an expired offer is gone (it also stops holding updates)
   const wasResult = getRound().phase === 'result';
   const ticked = R.tick(getRound(), now);
   if (ticked !== getRound()) commit(ticked);
   if (R.shouldReturnToIdle(getRound(), now) && !$<HTMLDialogElement>('score-dialog').open) {
     const done = getRound();
-    if (!wasResult) notice(`${done.name}'s round ended while the screen was away: ${done.count} puri${done.count === 1 ? '' : 's'} saved.`);
+    if (!wasResult) notice(`${done.name}'s round ended while the screen was away: ${plural(done.count, 'puri')} saved.`);
     commit(R.IDLE);
   }
   const r = getRound();
@@ -643,6 +643,8 @@ function renderLive(r: R.RoundState, now: number): void {
   show(banner, waiting > 0 && !off);
   if (waiting) {
     text($('bite-title'), paused ? 'Under review' : afterZero ? 'Last bite? Referee decides' : 'Bite spotted!');
+    const help = banner.querySelector<HTMLElement>('.bite-help')!;
+    help.classList.toggle('wrapped', help.offsetTop > $('bite-title').offsetTop + 8); // on its own line under the title
     const more = $('bite-more');
     show(more, waiting > 1);
     text(more, `+${waiting - 1} more`);
@@ -671,7 +673,7 @@ function renderLive(r: R.RoundState, now: number): void {
 
   const armed = now < escArmedUntil;
   const end = $('btn-end');
-  text(end, armed ? (waiting ? `Press Esc again to end (${waiting} bite${waiting === 1 ? '' : 's'} waiting)` : 'Press Esc again to end') : 'End round (Esc)');
+  text(end, armed ? (waiting ? `Press Esc again to end (${plural(waiting, 'bite')} waiting)` : 'Press Esc again to end') : 'End round (Esc)');
   end.classList.toggle('armed', armed);
 
   text($('live-last'), stripStatus(r, off));
@@ -730,24 +732,47 @@ function renderResult(r: R.RoundState, now: number): void {
 }
 
 // ---------- boot ----------
-/** One stall, one tab: a second tab would open the camera again and overwrite the board on save. */
-function claimTab(): Promise<boolean> {
-  if (!navigator.locks) return Promise.resolve(true);
+const CLAIM_WAIT_MS = 1500;
+
+/**
+ * One stall, one tab: a second tab would open the camera again and overwrite the board on save. Waits for
+ * the lock (a reload's old page lets go a moment later); if it is still held after CLAIM_WAIT_MS, `onWait`
+ * shows the "already open" screen. Resolves once this tab owns the stall.
+ */
+function claimTab(onWait: () => void): Promise<void> {
+  if (!navigator.locks) return Promise.resolve();
   return new Promise((resolve) => {
-    void navigator.locks.request('ppc-stall', { ifAvailable: true }, (lock) => {
-      resolve(lock != null);
-      return lock ? new Promise<void>(() => {}) : undefined; // hold it for the life of the page
-    });
+    const wait = window.setTimeout(onWait, CLAIM_WAIT_MS);
+    const granted = () => {
+      clearTimeout(wait);
+      resolve();
+    };
+    navigator.locks
+      .request('ppc-stall', () => {
+        granted();
+        return new Promise<void>(() => {}); // hold it for the life of the page
+      })
+      .catch(granted); // locks unavailable here: run as the only tab
   });
 }
 
-void claimTab().then((ok) => {
-  if (!ok) return show($('other-tab'), true);
-  claimed = true;
+let waitedForTab = false;
+void claimTab(() => {
+  waitedForTab = true;
+  $('stage').inert = true; // the app under the overlay must not take focus, clicks or a form submit
+  show($('other-tab'), true);
+}).then(() => {
+  // The other tab went away. This page's copy of the board is from before it closed: start fresh.
+  if (waitedForTab) return location.reload();
   boot();
 });
 
+/** Runs once this tab owns the stall; until then nothing listens and the inert stage blocks the rest. */
 function boot(): void {
+  addEventListener('keydown', onKey);
+  addEventListener('keyup', onKeyUp);
+  recoverSavedRound();
+  prev = getRound();
   text($('idle-seconds'), `${settings.roundSeconds} seconds`);
   applyEventLine();
   renderBoards();
@@ -758,39 +783,42 @@ function boot(): void {
   addEventListener('keydown', () => void keepAwake(), { once: true });
 
   // A round saved before a crash and too old to resume (DD8, O12 + review fix).
-  {
-    const e = takeExpired();
-    if (e) {
-      const time = new Date(e.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      notice(
-        e.saved > 0
-          ? `${e.name}'s round (${time}) was recovered: ${e.saved} puri${e.saved === 1 ? '' : 's'} saved.`
-          : `${e.name}'s round (${time}) expired, not saved. Re-run from sign-up.`,
-      );
-    }
+  const e = takeExpired();
+  if (e) {
+    const time = new Date(e.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    notice(
+      e.saved > 0
+        ? `${e.name}'s round (${time}) was recovered: ${plural(e.saved, 'puri')} saved.`
+        : `${e.name}'s round (${time}) expired, not saved. Re-run from sign-up.`,
+    );
   }
+
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) void registerServiceWorker();
 }
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  void registerServiceWorker();
+/** Whether a waiting deploy would interrupt the referee right now (see update.ts). */
+function updateIsBlocked(): boolean {
+  return updateBlocked(
+    {
+      phase: getRound().phase,
+      setupOpen,
+      dialogOpen: $<HTMLDialogElement>('score-dialog').open,
+      undoUntil: undo?.until ?? null,
+      name: $<HTMLInputElement>('name-input').value,
+      noticeShown: !$('notice').hidden,
+    },
+    Date.now(),
+  );
 }
 
-/** A new version waits; let it take over (and reload) only when no round is running. */
+/** A new version waits; it takes over (and the page reloads) only when nothing on screen would be lost. */
 async function registerServiceWorker(): Promise<void> {
   // First visit: the new worker claims the page, but nothing old is running, so no reload.
   let hadController = !!navigator.serviceWorker.controller;
   const reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   let pendingReload = false;
   const reloadWhenSafe = () => {
-    // Never reload under the referee: a round, the result reveal, a pending undo, Setup, the score
-    // dialog or a name being typed.
-    const busy =
-      getRound().phase !== 'idle' ||
-      setupOpen ||
-      undo != null ||
-      $<HTMLDialogElement>('score-dialog').open ||
-      $<HTMLInputElement>('name-input').value.trim() !== '';
-    if (pendingReload && !busy) location.reload();
+    if (pendingReload && !updateIsBlocked()) location.reload();
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) {
@@ -801,7 +829,8 @@ async function registerServiceWorker(): Promise<void> {
     reloadWhenSafe();
   });
   const promote = () => {
-    if (reg.waiting && navigator.serviceWorker.controller && !R.isInRound(getRound())) {
+    // Same rule as the reload: activating deletes the old build's cache, so the page must reload at once.
+    if (reg.waiting && navigator.serviceWorker.controller && !updateIsBlocked()) {
       reg.waiting.postMessage({ type: 'skip-waiting' });
     }
   };
@@ -810,7 +839,7 @@ async function registerServiceWorker(): Promise<void> {
   });
   promote();
   window.setInterval(() => {
-    promote(); // picks the next idle moment if a round was running
+    promote(); // picks the next quiet moment if the referee was busy
     reloadWhenSafe();
   }, SW_UPDATE_POLL_MS);
 }

@@ -5,7 +5,7 @@ import { allResults, clearResults, ranked, removeResult, resultsCsv, saveSetting
 import type { CountMode } from '../round';
 import type { Vision } from '../vision/client';
 import type { VisionResult } from '../vision/protocol';
-import { $, hhmmss, show, text, toast } from './dom';
+import { $, hhmmss, plural, show, text, toast } from './dom';
 
 const LOG_LINES = 6;
 const DIALOG_IDLE_MS = 60_000;
@@ -211,7 +211,7 @@ export function initSetup(deps: SetupDeps) {
     const top = ranked(all)[0];
     text(
       $('set-board-stats'),
-      all.length ? `${all.length} contestant${all.length === 1 ? '' : 's'} tonight · high score ${top.score} · saved on this laptop` : 'No contestants yet',
+      all.length ? `${plural(all.length, 'contestant')} tonight · high score ${top.score} · saved here` : 'No contestants yet',
     );
   }
 

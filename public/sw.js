@@ -62,17 +62,25 @@ self.addEventListener('fetch', (e) => {
 
   if (req.mode === 'navigate') {
     const cached = () => caches.match('./', { cacheName: CACHE });
+    let servedCache = false;
     const network = fetch(req).then((res) => {
-      // Only the app's own page may become the offline shell, never another URL opened in a tab.
+      // Only the app's own page may become the offline shell, never another URL opened in a tab, and only
+      // when it is the page that rendered: a late page from a newer deploy would not match this cache's assets.
       const isShell = new URL('./', self.location.href).pathname === url.pathname || url.pathname.endsWith('/index.html');
-      if (res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
+      if (!servedCache && res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
         const copy = res.clone();
         void caches.open(CACHE).then((c) => c.put('./', copy));
       }
       return res;
     });
     // Whichever comes first: the network page, or the cached page once NAV_TIMEOUT_MS passes.
-    const slow = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS)).then(() => cached().then((hit) => hit || network));
+    const slow = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS))
+      .then(() => cached())
+      .then((hit) => {
+        if (!hit) return network;
+        servedCache = true;
+        return hit;
+      });
     e.respondWith(
       Promise.race([network, slow]).catch(() => cached().then((hit) => hit || Response.error())),
     );

@@ -18,6 +18,11 @@ export function clock(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** "1 puri", "3 puris". */
+export function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 export function hhmmss(d = new Date()): string {
   return d.toTimeString().slice(0, 8);
 }

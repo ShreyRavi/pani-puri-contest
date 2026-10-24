@@ -69,6 +69,7 @@ Titan One for display, Rubik (400/500/700/900) for everything else. Both are bun
 | 150 | Titan One | TIME! |
 | 140 | Titan One | live timer |
 | 120 | Titan One | title |
+| 96 | Titan One | "already open" screen title |
 | 80 | Titan One | paused card |
 | 64 | Titan One | contestant name, step back |
 | 56 | Titan One | board title, camera-off card |
@@ -90,6 +91,7 @@ Titan One for display, Rubik (400/500/700/900) for everything else. Both are bun
 - **Overlay card:** centered in the camera box on panel color. Paused uses a 6px marigold dashed border and 80px text; camera off uses 56px text.
 - **Toast:** cream on ground-text, top 48px, optional Undo button. The sticky notice uses the same style, holds the 48px slot until a key is pressed, and pushes a toast below it.
 - **Board row:** rank, name, points. Top row marigold; your row on the result screen marigold with a cream outline; empty rows read "open" in muted.
+- **Already-open screen:** full stage on ground, 96px Titan One marigold title, 40px Rubik cream line (max 1200px). Shown when another tab holds the stall; the app beneath is inert.
 - **Meter (Setup):** marigold fill, chilli open line, chutney close line (dashed and moving with the peak in Relative mode), striped while waiting.
 
 ## Overlay order (z-index)
@@ -98,6 +100,7 @@ Top to bottom:
 
 | z | Layer |
 | --- | --- |
+| 80 | "already open in another tab" screen |
 | 70 | toast, sticky notice |
 | 60 | 3-2-1 countdown |
 | 50 | camera-off card |

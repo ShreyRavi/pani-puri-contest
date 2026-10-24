@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BiteDetector } from '../src/detector';
-import { CSP } from '../src/build/csp';
+import { CSP, SECURITY_HEADERS } from '../src/build/csp';
 import { buildHashInput, modelHashInput, renderServiceWorker } from '../src/build/precache';
 import * as R from '../src/round';
 import { normalizeRound } from '../src/store';
@@ -25,12 +25,13 @@ describe('camera error mapping', () => {
 });
 
 describe('Content-Security-Policy', () => {
-  it('vercel.json serves the same policy as vite preview', () => {
+  it('vercel.json sends exactly the security headers vite preview sends', () => {
     const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
     const all = vercel.headers.find((h: { source: string }) => h.source === '/(.*)');
-    const csp = all.headers.find((h: { key: string }) => h.key === 'Content-Security-Policy');
-    expect(csp.value).toBe(CSP);
+    const served = Object.fromEntries(all.headers.map((h: { key: string; value: string }) => [h.key, h.value]));
+    expect(served).toEqual(SECURITY_HEADERS);
     expect(CSP).toContain("connect-src 'self'");
+    expect(CSP).toContain("form-action 'none'");
   });
 });
 
