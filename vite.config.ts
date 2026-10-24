@@ -3,17 +3,10 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { buildPrecacheList, renderServiceWorker } from './src/build/precache.ts';
+import { CSP } from './src/build/csp.ts';
+import { buildHashInput, buildPrecacheList, modelHashInput, renderServiceWorker } from './src/build/precache.ts';
 
-async function walk(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...(await walk(full)));
-    else if (entry.isFile()) out.push(full);
-  }
-  return out;
-}
+const sha1 = (data: string | Buffer) => createHash('sha1').update(data).digest('hex');
 
 /**
  * Build-only: after the bundle is written (and public/ has been copied
@@ -31,14 +24,17 @@ function precacheManifest(): Plugin {
     async closeBundle() {
       const outDir = resolve(config.root, config.build.outDir);
       const template = await readFile(resolve(config.publicDir, 'sw.js'), 'utf8');
-      const files = (await walk(outDir)).map((f) => relative(outDir, f));
+      const files = (await readdir(outDir, { recursive: true, withFileTypes: true }))
+        .filter((e) => e.isFile())
+        .map((e) => relative(outDir, join(e.parentPath, e.name)));
       const list = buildPrecacheList(files);
       // Fixed-name files (models, wasm) change bytes without changing names: fold content hashes in.
       const digests = await Promise.all(
-        list.slice(1).map(async (p) => `${p}:${createHash('sha1').update(await readFile(join(outDir, p))).digest('hex')}`),
+        list.slice(1).map(async (p) => `${p}:${sha1(await readFile(join(outDir, p)))}`),
       );
-      const modelDigests = digests.filter((d) => d.includes('/mediapipe/'));
-      await writeFile(join(outDir, 'sw.js'), renderServiceWorker(template, list, digests.join('|'), modelDigests.join('|')));
+      const buildHash = sha1(buildHashInput(list, template, digests.join('|'))).slice(0, 12);
+      const modelsHash = sha1(modelHashInput(digests)).slice(0, 12);
+      await writeFile(join(outDir, 'sw.js'), renderServiceWorker(template, list, buildHash, modelsHash));
       config.logger.info(`[precache] dist/sw.js: ${list.length} entries`);
     },
   };
@@ -47,5 +43,6 @@ function precacheManifest(): Plugin {
 export default defineConfig({
   plugins: [precacheManifest()],
   worker: { format: 'es' },
+  preview: { headers: { 'Content-Security-Policy': CSP } },
   test: { environment: 'node', include: ['test/**/*.test.ts'], exclude: ['.claude/**', 'node_modules/**', 'dist/**'] },
 });

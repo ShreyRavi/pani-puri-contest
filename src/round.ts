@@ -11,6 +11,8 @@
 // still accepted until `detectUntil` (bite window + latency margin), then the
 // round holds until the queue is decided, capped at CAP_MS after zero.
 
+import { DEFAULT_DETECTOR } from './detector';
+
 export type Phase = 'idle' | 'arming' | 'live' | 'paused' | 'buzzer' | 'result';
 export type CountMode = 'auto' | 'hybrid' | 'manual';
 
@@ -18,7 +20,7 @@ export const ARMING_MS = 3000;
 export const CAP_MS = 10000;
 export const LATENCY_MARGIN_MS = 300;
 /** Fallback detect window: the detector's default 1200 ms bite window + the latency margin. */
-export const DEFAULT_DETECT_MS = 1200 + LATENCY_MARGIN_MS;
+export const DEFAULT_DETECT_MS = DEFAULT_DETECTOR.windowMs + LATENCY_MARGIN_MS;
 export const MAX_QUEUE = 3;
 export const RESULT_IDLE_MS = 20000;
 

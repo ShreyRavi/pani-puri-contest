@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BiteDetector } from '../src/detector';
-import { renderServiceWorker } from '../src/build/precache';
+import { CSP } from '../src/build/csp';
+import { buildHashInput, modelHashInput, renderServiceWorker } from '../src/build/precache';
 import * as R from '../src/round';
 import { normalizeRound } from '../src/store';
 import { cameraCause } from '../src/vision/client';
@@ -23,6 +24,16 @@ describe('camera error mapping', () => {
   ])('%s -> %s', (name, cause) => expect(cameraCause(e(name))).toBe(cause));
 });
 
+describe('Content-Security-Policy', () => {
+  it('vercel.json serves the same policy as vite preview', () => {
+    const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
+    const all = vercel.headers.find((h: { source: string }) => h.source === '/(.*)');
+    const csp = all.headers.find((h: { key: string }) => h.key === 'Content-Security-Policy');
+    expect(csp.value).toBe(CSP);
+    expect(CSP).toContain("connect-src 'self'");
+  });
+});
+
 describe('real sw.js template', () => {
   const tpl = readFileSync('public/sw.js', 'utf8');
   it('renders with build and model hashes and a real list', () => {
@@ -31,15 +42,15 @@ describe('real sw.js template', () => {
     expect(out).not.toMatch(/__BUILD__|__MODELS__|self\.__PRECACHE__/);
   });
   it('keeps the model cache name when only app files change', () => {
-    const a = renderServiceWorker(tpl, ['./', './assets/a.js'], 'x', 'models-1');
-    const b = renderServiceWorker(tpl, ['./', './assets/b.js'], 'y', 'models-1');
-    const models = (s: string) => s.match(/const MODELS = '([0-9a-f]+)'/)![1];
-    const build = (s: string) => s.match(/const BUILD = '([0-9a-f]+)'/)![1];
-    expect(models(a)).toBe(models(b));
-    expect(build(a)).not.toBe(build(b));
+    const models = ['./mediapipe/face_landmarker.task:111', './mediapipe/wasm/x.wasm:222'];
+    const a = [...models, './assets/a.js:aaa'];
+    const b = [...models, './assets/b.js:bbb'];
+    expect(modelHashInput(a)).toBe(modelHashInput(b));
+    expect(buildHashInput(['./'], tpl, a.join('|'))).not.toBe(buildHashInput(['./'], tpl, b.join('|')));
+    expect(modelHashInput([...a, './mediapipe/face_landmarker.task:999'])).not.toBe(modelHashInput(a));
   });
   it('throws when a placeholder is missing', () => {
-    expect(() => renderServiceWorker("const BUILD = '__BUILD__';", ['./'])).toThrow(/placeholder/);
+    expect(() => renderServiceWorker("const BUILD = '__BUILD__';", ['./'], 'b', 'm')).toThrow(/placeholder/);
   });
 });
 

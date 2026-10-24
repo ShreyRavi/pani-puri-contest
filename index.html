@@ -58,7 +58,7 @@
       </div>
       <ol class="board-list" id="idle-board"></ol>
       <div class="board-foot">
-        <span class="board-foot-note">Scores saved on this laptop all night</span>
+        <span class="board-foot-note">Scores saved here all night</span>
         <button type="button" class="btn-ghost-sm" id="idle-setup"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Setup (S)</span></button>
       </div>
     </aside>
@@ -120,7 +120,7 @@
   <footer aria-label="Referee controls" class="strip" id="live-strip">
     <div class="strip-group">
       <button type="button" class="btn btn-confirm" id="btn-confirm"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Count it <kbd class="kbd-confirm">Space</kbd></button>
-      <button type="button" class="btn btn-reject" id="btn-reject"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>Not a puri <kbd class="kbd-reject">X</kbd></button>
+      <button type="button" class="btn btn-reject" id="btn-reject"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg><span id="btn-reject-label">Not a puri</span> <kbd class="kbd-reject">X</kbd></button>
       <button type="button" class="btn btn-square" id="btn-plus" aria-label="Add one manually (plus key)">+1</button>
       <button type="button" class="btn btn-square" id="btn-minus" aria-label="Remove one manually (minus key)">−1</button>
     </div>
@@ -316,6 +316,10 @@
   </footer>
 </main>
 
+<div class="other-tab" id="other-tab" role="alert" hidden>
+  <h1 class="other-tab-title">Already open in another tab</h1>
+  <p class="other-tab-text">Use the other tab or window, and close this one so the scoreboard isn't overwritten.</p>
+</div>
 <div class="toast notice" id="notice" role="alert" hidden></div>
 <div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button type="button" class="toast-action" id="toast-action" hidden>Undo</button></div>
 </div>

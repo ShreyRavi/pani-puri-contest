@@ -5,7 +5,6 @@ import { DEFAULT_DETECTOR, type DetectorMode } from './detector';
 import { CAP_MS, end, IDLE, isInRound, runningUntil, tick, type CountMode, type Pending, type RoundState } from './round';
 
 export type SoundMode = 'all' | 'buzzer' | 'muted';
-export type DetectionMode = DetectorMode;
 
 export interface Settings {
   cameraId: string;
@@ -13,7 +12,7 @@ export interface Settings {
   mode: CountMode;
   autoConfirmSeconds: number;
   sound: SoundMode;
-  detection: DetectionMode;
+  detection: DetectorMode;
   open: number;
   close: number;
   drop: number;
@@ -164,9 +163,14 @@ export function allResults(): readonly Result[] {
   return results;
 }
 
-/** Highest score first; ties go to whoever got there first. */
+let rankedCache: { from: readonly Result[]; list: Result[] } | null = null;
+
+/** Highest score first; ties go to whoever got there first. Cached per results array (the TV loop asks every frame). */
 export function ranked(list: readonly Result[] = results): Result[] {
-  return [...list].sort((a, b) => b.score - a.score || a.at - b.at);
+  if (rankedCache?.from === list) return rankedCache.list;
+  const sorted = [...list].sort((a, b) => b.score - a.score || a.at - b.at);
+  rankedCache = { from: list, list: sorted };
+  return sorted;
 }
 
 export function rankOf(id: string, list: readonly Result[] = results): number {

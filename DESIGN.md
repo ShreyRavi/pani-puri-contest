@@ -33,7 +33,8 @@ The stage is a fixed 1920×1080 canvas, scaled to fit the window, because it is 
 | `--peach` | #FFE1B3 | secondary text on the result card |
 | `--sand` | #CDBB9C | labels, board footer |
 | `--muted` | #8E7FA3 | paused timer, empty rows, operator meta |
-| warning text | #FF7A66 | countdown warning, low timer, error status |
+| `--warn-text` | #FF7A66 | countdown warning, low timer, error status |
+| `--marigold-deep` | #C98A12 | second stripe of the meter's waiting fill (non-text) |
 
 ### Measured contrast
 

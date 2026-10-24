@@ -50,7 +50,9 @@ async function init(b: string, hands: boolean): Promise<void> {
     FaceLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/face_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numFaces: 2,
+      // Two faces keep the lock sticky when a bystander leans in; on the CPU fallback the second
+      // face would double the per-frame cost, so track one there.
+      numFaces: d === 'GPU' ? 2 : 1,
       minFaceDetectionConfidence: 0.5,
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,

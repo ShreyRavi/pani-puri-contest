@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildHash,
+  buildHashInput,
   buildPrecacheList,
   normalizePath,
   renderServiceWorker,
@@ -52,27 +52,31 @@ describe('buildPrecacheList', () => {
   });
 });
 
-describe('buildHash', () => {
-  const tpl = "const BUILD = '__BUILD__'; const PRECACHE = self.__PRECACHE__ || ['./'];";
+describe('buildHashInput', () => {
+  const tpl = "const BUILD = '__BUILD__'; const PRECACHE = self.__PRECACHE__ || ['./']; const isModel = (p) => p.includes('/mediapipe/');";
 
-  it('changes when the list changes', () => {
-    const a = buildHash(['./', './assets/a-1.js'], tpl);
-    const b = buildHash(['./', './assets/a-2.js'], tpl);
-    expect(a).not.toBe(b);
-    expect(a).toMatch(/^[0-9a-f]{12}$/);
-  });
-
-  it('changes when the template changes, stable otherwise', () => {
+  it('changes when the list, template or file contents change', () => {
     const list = ['./', './assets/a-1.js'];
-    expect(buildHash(list, tpl)).toBe(buildHash([...list].reverse(), tpl));
-    expect(buildHash(list, tpl)).not.toBe(buildHash(list, tpl + '\n'));
+    expect(buildHashInput(list, tpl)).not.toBe(buildHashInput(['./', './assets/a-2.js'], tpl));
+    expect(buildHashInput(list, tpl)).not.toBe(buildHashInput(list, tpl + '\n'));
+    expect(buildHashInput(list, tpl, 'a:1')).not.toBe(buildHashInput(list, tpl, 'a:2'));
   });
 
-  it('renders a real array and hashed cache name', () => {
-    const out = renderServiceWorker(tpl, ['./', './assets/a-1.js']);
+  it('ignores list order', () => {
+    const list = ['./', './assets/a-1.js'];
+    expect(buildHashInput(list, tpl)).toBe(buildHashInput([...list].reverse(), tpl));
+  });
+
+  it('renders a real array and the given cache names', () => {
+    const out = renderServiceWorker(tpl, ['./', './assets/a-1.js'], 'abcdef123456', 'm');
     expect(out).not.toContain('__PRECACHE__');
     expect(out).not.toContain('__BUILD__');
     expect(out).toContain('"./assets/a-1.js"');
-    expect(out).toMatch(/const BUILD = '[0-9a-f]{12}'/);
+    expect(out).toContain("const BUILD = 'abcdef123456'");
+  });
+
+  it("refuses a template that stopped routing '/mediapipe/' to the model cache", () => {
+    const old = "const BUILD = '__BUILD__'; const PRECACHE = self.__PRECACHE__ || ['./']; const isModel = (p) => p.includes('/models/');";
+    expect(() => renderServiceWorker(old, ['./'], 'b', 'm')).toThrow(/mediapipe/);
   });
 });

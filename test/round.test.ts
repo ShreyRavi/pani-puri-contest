@@ -237,3 +237,49 @@ describe('buzzer trigger (DD3)', () => {
     expect(R.buzzerDue(R.start('A', 60000, 0), R.end(R.start('A', 60000, 0), 10))).toBe(false);
   });
 });
+
+// State-matrix cells found untested in the /ship review (round machine × paused/buzzer).
+describe('paused and buzzer edge cells', () => {
+  it('X while paused rejects the oldest bite and starts the next clock only after resume', () => {
+    let s = liveAt(0, 60000, { autoConfirmMs: 2000 });
+    s = R.candidate(s, bite(5000), 'hybrid', 5000);
+    s = R.candidate(s, bite(5200), 'hybrid', 5200);
+    s = R.togglePause(s, 5500);
+    s = R.reject(s, 6000);
+    expect(s).toMatchObject({ phase: 'paused', rejected: 1, count: 0 });
+    expect(s.queue).toHaveLength(1);
+    expect(R.tick(s, 30000).count).toBe(0); // frozen while paused
+    const resumed = R.togglePause(s, 10000);
+    expect(R.tick(resumed, 10000 + 1999).count).toBe(0);
+    expect(R.tick(resumed, 10000 + 2001).count).toBe(1);
+  });
+
+  it('camera loss while paused flushes waiting bites to not counted and stays paused', () => {
+    const s = R.goOffline(R.togglePause(R.candidate(liveAt(), bite(5000), 'hybrid', 5000), 5500));
+    expect(s).toMatchObject({ phase: 'paused', notCounted: 1, queue: [], dueAt: 0 });
+  });
+
+  it('a 4th bite in the post-buzzer detect window drops the oldest as not counted', () => {
+    let s = liveAt(0); // live 3000..63000
+    for (const t of [62000, 62300, 62600]) s = R.candidate(s, bite(t), 'hybrid', t);
+    s = R.tick(s, 63100);
+    expect(s.phase).toBe('buzzer');
+    s = R.candidate(s, bite(63200, 62900), 'hybrid', 63200); // mouth opened before zero
+    expect(s).toMatchObject({ phase: 'buzzer', notCounted: 1, rejected: 0 });
+    expect(s.queue.map((b) => b.at)).toEqual([62300, 62600, 63200]);
+  });
+
+  it('Esc during the buzzer hold ends with the waiting bite not counted', () => {
+    let s = R.tick(R.candidate(liveAt(), bite(62500), 'hybrid', 62500), 63100);
+    expect(s.phase).toBe('buzzer');
+    s = R.end(s, 64000);
+    expect(s).toMatchObject({ phase: 'result', notCounted: 1, queue: [], resultAt: 64000 });
+  });
+
+  it('camera loss in the buzzer flushes the queue and the result follows the detect window', () => {
+    let s = R.tick(R.candidate(liveAt(), bite(62500), 'hybrid', 62500), 63100);
+    s = R.goOffline(s);
+    expect(s).toMatchObject({ phase: 'buzzer', notCounted: 1, queue: [] });
+    expect(R.tick(s, 63000 + R.DEFAULT_DETECT_MS + 1).phase).toBe('result');
+  });
+});

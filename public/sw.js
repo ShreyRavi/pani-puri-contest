@@ -14,14 +14,16 @@
 // loses the files it is running. The page asks it to take over only when no
 // round is in progress, then reloads.
 //
-// Navigations are network-first (a redeploy is picked up when online, cache
-// when not); everything else is cache-first.
+// Navigations are network-first with a short timeout (a redeploy is picked up
+// when online; weak venue wifi or a captive portal falls back to the cache fast);
+// everything else is cache-first.
 const BUILD = '__BUILD__';
 const MODELS = '__MODELS__';
 const CACHE = `ppc-${BUILD}`;
 const MODEL_CACHE = `ppc-models-${MODELS}`;
 const PRECACHE = self.__PRECACHE__ || ['./'];
 const isModel = (path) => path.includes('/mediapipe/');
+const NAV_TIMEOUT_MS = 3000;
 
 self.addEventListener('install', (e) => {
   const models = PRECACHE.filter(isModel);
@@ -59,18 +61,20 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
+    const cached = () => caches.match('./', { cacheName: CACHE });
+    const network = fetch(req).then((res) => {
+      // Only the app's own page may become the offline shell, never another URL opened in a tab.
+      const isShell = new URL('./', self.location.href).pathname === url.pathname || url.pathname.endsWith('/index.html');
+      if (res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
+        const copy = res.clone();
+        void caches.open(CACHE).then((c) => c.put('./', copy));
+      }
+      return res;
+    });
+    // Whichever comes first: the network page, or the cached page once NAV_TIMEOUT_MS passes.
+    const slow = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS)).then(() => cached().then((hit) => hit || network));
     e.respondWith(
-      fetch(req)
-        .then((res) => {
-          // Only the app's own page may become the offline shell, never another URL opened in a tab.
-          const isShell = new URL('./', self.location.href).pathname === url.pathname || url.pathname.endsWith('/index.html');
-          if (res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
-            const copy = res.clone();
-            void caches.open(CACHE).then((c) => c.put('./', copy));
-          }
-          return res;
-        })
-        .catch(() => caches.match('./', { cacheName: CACHE }).then((hit) => hit || Response.error())),
+      Promise.race([network, slow]).catch(() => cached().then((hit) => hit || Response.error())),
     );
     return;
   }

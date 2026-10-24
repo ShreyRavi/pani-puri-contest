@@ -9,11 +9,8 @@ export function text(el: HTMLElement, value: string): void {
   if (el.textContent !== value) el.textContent = value;
 }
 
-export function show(el: HTMLElement | SVGElement, visible: boolean): void {
-  if (el instanceof HTMLElement) {
-    if (el.hidden === visible) el.hidden = !visible;
-  } else if (visible) el.removeAttribute('hidden');
-  else el.setAttribute('hidden', '');
+export function show(el: Element, visible: boolean): void {
+  el.toggleAttribute('hidden', !visible); // no-op when already in that state
 }
 
 export function clock(ms: number): string {
@@ -43,13 +40,22 @@ export function toast(message: string, action?: ToastAction): void {
   if (action) {
     btn.textContent = action.label;
     btn.onclick = () => {
-      el.hidden = true;
+      // Run first: the action may check that its offer is still on screen, or show its own toast.
+      const shown = toastTimer;
       action.run();
+      if (toastTimer === shown) el.hidden = true;
     };
   }
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (el.hidden = true), Math.max(1000, action?.ms ?? 2200));
+}
+
+/** Take the toast down now, action and timer included. */
+export function hideToast(): void {
+  clearTimeout(toastTimer);
+  $('toast').hidden = true;
+  $<HTMLButtonElement>('toast-action').onclick = null;
 }
 
 /** True while a toast with an action button is on screen. */

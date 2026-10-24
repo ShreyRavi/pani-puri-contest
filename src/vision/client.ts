@@ -121,24 +121,6 @@ export class Vision {
     }
   }
 
-  /** Stop everything: camera, worker, watchdog, retries. */
-  stop(): void {
-    if (this.watchdog !== null) clearInterval(this.watchdog);
-    this.watchdog = null;
-    document.removeEventListener('visibilitychange', this.onVisibility);
-    if (this.retryTimer !== null) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    this.pumpGen++;
-    this.killWorker();
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    this.video.srcObject = null;
-    this.offline = false;
-    this.everReady = false;
-    this.cameraGen++;
-    this.setStatus({ state: 'off' });
-  }
-
   async cameras(): Promise<MediaDeviceInfo[]> {
     const all = await navigator.mediaDevices.enumerateDevices();
     return all.filter((d) => d.kind === 'videoinput');

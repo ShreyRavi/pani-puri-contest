@@ -41,36 +41,33 @@ export function buildPrecacheList(files: readonly string[]): string[] {
   return ['./', ...[...set].sort()];
 }
 
-/** FNV-1a 32-bit, hex. Short and deterministic; not cryptographic. */
-function fnv1a(str: string, seed = 0x811c9dc5): string {
-  let h = seed >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
+/** Path segment that marks model files; public/sw.js routes the same segment to its long-lived cache. */
+export const MODEL_DIR = '/mediapipe/';
+
+/** What the build hashes into the cache name: the sorted precache list, the sw template and a file-content fingerprint. */
+export function buildHashInput(list: readonly string[], template: string, fingerprint = ''): string {
+  return JSON.stringify([...list].sort()) + '\n' + template + '\n' + fingerprint;
 }
 
-/** Short hash (12 hex chars) of the sorted precache list, the sw template and a file-content fingerprint. */
-export function buildHash(list: readonly string[], template: string, fingerprint = ''): string {
-  const input = JSON.stringify([...list].sort()) + '\n' + template + '\n' + fingerprint;
-  return fnv1a(input) + fnv1a(input, 0x050c5d1f).slice(0, 4);
+/** What the build hashes into the model cache name: only the model files' digests, so app deploys keep the ~24 MB cache. */
+export function modelHashInput(digests: readonly string[]): string {
+  return digests.filter((d) => d.includes(MODEL_DIR)).join('|');
 }
 
 /**
- * Fill the sw.js template. `fingerprint` should change when any precached file's bytes
- * change (content hashes of fixed-name model files), so a new cache name is issued.
+ * Fill the sw.js template with the precache list, the build hash and the model-files hash
+ * (both computed by the build from buildHashInput / model content digests).
  */
-export function renderServiceWorker(template: string, list: readonly string[], fingerprint = '', modelFingerprint = ''): string {
+export function renderServiceWorker(template: string, list: readonly string[], buildHash: string, modelsHash: string): string {
   if (!template.includes(PRECACHE_PLACEHOLDER) || !template.includes(BUILD_PLACEHOLDER)) {
     throw new Error('sw.js template is missing the __PRECACHE__ or __BUILD__ placeholder');
   }
-  const hash = buildHash(list, template, fingerprint);
+  if (!template.includes(`'${MODEL_DIR}'`)) throw new Error(`sw.js template no longer routes '${MODEL_DIR}' to the model cache`);
   return template
     .split(PRECACHE_PLACEHOLDER)
     .join(JSON.stringify(list, null, 2))
     .split(BUILD_PLACEHOLDER)
-    .join(hash)
+    .join(buildHash)
     .split(MODELS_PLACEHOLDER)
-    .join(buildHash([], 'models', modelFingerprint));
+    .join(modelsHash);
 }

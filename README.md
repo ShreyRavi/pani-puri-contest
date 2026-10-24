@@ -48,7 +48,7 @@ The page asks Chrome to keep the screen on while it's open, but set this too: **
 Press **Esc** then **S** on the sign-up screen to open Setup.
 
 1. **Light (10s):** stand where contestants will stand, about 1 m from the camera. Status should read *Face found · ~30 fps*. If *Too dark* shows, turn a light toward the contestant's face. Backlight from the stall's string lights is the usual cause.
-2. **Latency (5s):** check that the *Latency* line reads **p95 under 150 ms**. If it's over, close other apps and check that the status shows `GPU`, not `CPU`.
+2. **Latency (5s):** check that the *Latency* line reads **p95 under 150 ms**, once alone and once with a second person standing behind you (the app tracks two faces on GPU so it doesn't jump to a bystander). If it's over, close other apps and check that the status shows `GPU`, not `CPU` (on CPU it tracks one face).
 3. **Meter (20s):** open your mouth wide, then close it. The bar should cross the **red line (open)** and then the **green line (close)**. While a bite is in progress the bar turns striped and reads *Waiting for close*. The test log should show *bite candidate … would ask referee*.
    - If wide-open bites don't reach red, lower the **Mouth-open line** (try 0.40).
    - If talking or laughing triggers candidates, raise it (0.50) or tick **Require hand near mouth**.
@@ -82,7 +82,9 @@ How it behaves:
 - **Auto-confirm:** with Setup › Auto-confirm above 0, a waiting bite counts by itself after that many seconds. A bar on the banner shows the time left.
 - **Camera drops out mid-round:** the camera box shows *Camera off · referee is counting*, **+1** becomes the main button, and the timer keeps going. When the camera comes back a *Camera back* toast appears.
 - **Refresh or crash mid-round:** reload the page. The round resumes with the right count and time remaining. If it's more than 5 minutes old, a score above 0 is saved to the board and a notice says so.
-- **Re-run round / Discard** on the result screen remove that score from the board, with a 5 s Undo (⌘/Ctrl Z, or **Esc** during the re-run countdown).
+- **Re-run round / Discard** on the result screen remove that score from the board, with a 5 s Undo (the toast's button, ⌘/Ctrl Z, or **Esc** during the re-run countdown).
+- **Page reloaded after a round ended:** the score is saved anyway and a notice says so.
+- **"Already open in another tab":** only one tab runs the stall, so two tabs can't overwrite each other's scores. Close the extra tab or window.
 - **Fix score** opens an editor. **Setup › Edit a score** fixes any entry, and **Export CSV** downloads the night's board.
 
 ## How detection works
@@ -125,3 +127,4 @@ npm run typecheck
 - **External webcam not used:** pick it under Setup › Camera.
 - **Status says CPU and latency is high:** in Chrome, enable *Use graphics acceleration when available* and restart Chrome.
 - **Board needs a reset for the next event:** Setup › Clear board (asks twice).
+- **Privacy is enforced by the browser:** the page's Content-Security-Policy only allows connections back to its own origin, so camera frames can't be sent anywhere even by mistake.

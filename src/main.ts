@@ -24,7 +24,7 @@ import {
   type Settings,
 } from './store';
 import { chaseLine, renderBoard } from './ui/board';
-import { $, clock, notice, show, text, toast, toastActionShowing } from './ui/dom';
+import { $, clock, hideToast, notice, show, text, toast, toastActionShowing } from './ui/dom';
 import { CameraStage } from './ui/overlay';
 import { initSetup, openScoreDialog } from './ui/setup';
 import { Vision } from './vision/client';
@@ -34,6 +34,11 @@ const FACE_LOST_MS = 3000;
 const ESC_CONFIRM_MS = 2000;
 const NO_FACE_HINT_MS = 1000;
 const UNDO_MS = 5000;
+/** This tab holds the stall lock (see claimTab); until then it reacts to nothing. */
+let claimed = false;
+/** A third quick Esc right after ending early must not skip the score reveal. */
+const RESULT_ESC_GUARD_MS = 1500;
+const SW_UPDATE_POLL_MS = 15000;
 
 // ---------- stage scaling ----------
 function fitStage(): void {
@@ -190,7 +195,7 @@ function commit(next: R.RoundState): void {
       rejected: next.rejected,
       notCounted: next.notCounted,
       seconds: Math.round(next.durationMs / 1000),
-      at: Date.now(),
+      at: Math.min(Date.now(), next.resultAt || Date.now()), // ties go to whoever finished first
     });
     next = { ...next, resultId: saved.id };
   }
@@ -241,7 +246,7 @@ function startRound(): void {
   baselineSamples = [];
   if (undo && !undo.rerun) {
     undo = null; // a new round closes a pending Discard undo
-    $('toast').hidden = true;
+    hideToast();
   }
   input.blur();
   commit(R.start(name, settings.roundSeconds * 1000, Date.now(), roundOptions()));
@@ -267,8 +272,9 @@ function doUndo(): void {
   if (!u || Date.now() > u.until) return;
   // Only from the screen it was offered on: never over the next contestant's round.
   if (u.rerun ? getRound().phase !== 'arming' : getRound().phase !== 'idle') return;
-  // A later toast replaced the Undo button: the offer is gone with it.
-  if (!toastActionShowing() && !(u.rerun && getRound().phase === 'arming')) return;
+  // A Discard undo lives only as long as its toast button; a later toast replacing it ends the
+  // offer. A Re-run undo stays valid for the whole countdown, even after its toast is replaced.
+  if (!u.rerun && !toastActionShowing()) return;
   undo = null;
   restoreResult(u.result);
   commit({ ...u.round, resultAt: Date.now() });
@@ -402,6 +408,7 @@ $('btn-save').addEventListener('click', closeSetup);
 
 // ---------- hotkeys ----------
 function onKey(e: KeyboardEvent): void {
+  if (!claimed) return; // another tab owns the stall
   // The sticky notice goes away on any key, and the key still does its normal job (O22).
   notice(null);
   const r = getRound();
@@ -496,7 +503,7 @@ function onKey(e: KeyboardEvent): void {
       case 'Escape':
         e.preventDefault();
         // A third quick Esc after ending early must not skip the score reveal.
-        if (Date.now() - r.resultAt < 1500) return;
+        if (Date.now() - r.resultAt < RESULT_ESC_GUARD_MS) return;
         return next();
       case '+':
       case '=':
@@ -523,9 +530,17 @@ let lastArmDigit = 0;
 function frame(): void {
   requestAnimationFrame(frame);
   const now = Date.now();
-  let r = R.tick(getRound(), now);
-  if (R.shouldReturnToIdle(r, now) && !$<HTMLDialogElement>('score-dialog').open) r = R.IDLE;
-  if (r !== getRound()) commit(r);
+  // Commit the ticked state first: a round that ended while nobody was watching (reload, hidden
+  // tab) must be saved before the result screen's idle timeout can clear it.
+  const wasResult = getRound().phase === 'result';
+  const ticked = R.tick(getRound(), now);
+  if (ticked !== getRound()) commit(ticked);
+  if (R.shouldReturnToIdle(getRound(), now) && !$<HTMLDialogElement>('score-dialog').open) {
+    const done = getRound();
+    if (!wasResult) notice(`${done.name}'s round ended while the screen was away: ${done.count} puri${done.count === 1 ? '' : 's'} saved.`);
+    commit(R.IDLE);
+  }
+  const r = getRound();
 
   const view = viewFor(r);
   showView(view);
@@ -651,7 +666,7 @@ function renderLive(r: R.RoundState, now: number): void {
   const canUndo = settings.mode === 'auto' && r.undoable && r.count > 0;
   $<HTMLButtonElement>('btn-confirm').disabled = !waiting;
   $<HTMLButtonElement>('btn-reject').disabled = !waiting && !canUndo;
-  setRejectLabel(settings.mode === 'auto' && !waiting ? 'Undo last' : 'Not a puri');
+  text($('btn-reject-label'), settings.mode === 'auto' && !waiting ? 'Undo last' : 'Not a puri');
   text($('btn-pause'), paused ? 'Resume (P)' : 'Pause (P)');
 
   const armed = now < escArmedUntil;
@@ -660,15 +675,6 @@ function renderLive(r: R.RoundState, now: number): void {
   end.classList.toggle('armed', armed);
 
   text($('live-last'), stripStatus(r, off));
-}
-
-let rejectLabel = '';
-function setRejectLabel(label: string): void {
-  if (label === rejectLabel) return;
-  rejectLabel = label;
-  const btn = $('btn-reject');
-  const textNode = [...btn.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
-  if (textNode) textNode.textContent = label + ' ';
 }
 
 function stripStatus(r: R.RoundState, off: boolean): string {
@@ -710,7 +716,7 @@ function renderResult(r: R.RoundState, now: number): void {
     trophy = false;
   }
   text($('res-rank'), pill);
-  show($('res-trophy') as unknown as HTMLElement, trophy);
+  show(document.getElementById('res-trophy')!, trophy);
   show($('res-adjusted'), !!r.resultId && adjusted.has(r.resultId));
 
   // Subline (DD10)
@@ -724,25 +730,44 @@ function renderResult(r: R.RoundState, now: number): void {
 }
 
 // ---------- boot ----------
-text($('idle-seconds'), `${settings.roundSeconds} seconds`);
-applyEventLine();
-renderBoards();
-requestAnimationFrame(frame);
-void vision.start(settings.cameraId);
-void keepAwake();
-addEventListener('pointerdown', () => void keepAwake(), { once: true });
-addEventListener('keydown', () => void keepAwake(), { once: true });
+/** One stall, one tab: a second tab would open the camera again and overwrite the board on save. */
+function claimTab(): Promise<boolean> {
+  if (!navigator.locks) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    void navigator.locks.request('ppc-stall', { ifAvailable: true }, (lock) => {
+      resolve(lock != null);
+      return lock ? new Promise<void>(() => {}) : undefined; // hold it for the life of the page
+    });
+  });
+}
 
-// A round saved before a crash and too old to resume (DD8, O12 + review fix).
-{
-  const e = takeExpired();
-  if (e) {
-    const time = new Date(e.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    notice(
-      e.saved > 0
-        ? `${e.name}'s round (${time}) was recovered: ${e.saved} puri${e.saved === 1 ? '' : 's'} saved.`
-        : `${e.name}'s round (${time}) expired, not saved. Re-run from sign-up.`,
-    );
+void claimTab().then((ok) => {
+  if (!ok) return show($('other-tab'), true);
+  claimed = true;
+  boot();
+});
+
+function boot(): void {
+  text($('idle-seconds'), `${settings.roundSeconds} seconds`);
+  applyEventLine();
+  renderBoards();
+  requestAnimationFrame(frame);
+  void vision.start(settings.cameraId);
+  void keepAwake();
+  addEventListener('pointerdown', () => void keepAwake(), { once: true });
+  addEventListener('keydown', () => void keepAwake(), { once: true });
+
+  // A round saved before a crash and too old to resume (DD8, O12 + review fix).
+  {
+    const e = takeExpired();
+    if (e) {
+      const time = new Date(e.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      notice(
+        e.saved > 0
+          ? `${e.name}'s round (${time}) was recovered: ${e.saved} puri${e.saved === 1 ? '' : 's'} saved.`
+          : `${e.name}'s round (${time}) expired, not saved. Re-run from sign-up.`,
+      );
+    }
   }
 }
 
@@ -757,7 +782,14 @@ async function registerServiceWorker(): Promise<void> {
   const reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   let pendingReload = false;
   const reloadWhenSafe = () => {
-    const busy = R.isInRound(getRound()) || setupOpen || $<HTMLDialogElement>('score-dialog').open;
+    // Never reload under the referee: a round, the result reveal, a pending undo, Setup, the score
+    // dialog or a name being typed.
+    const busy =
+      getRound().phase !== 'idle' ||
+      setupOpen ||
+      undo != null ||
+      $<HTMLDialogElement>('score-dialog').open ||
+      $<HTMLInputElement>('name-input').value.trim() !== '';
     if (pendingReload && !busy) location.reload();
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -780,5 +812,5 @@ async function registerServiceWorker(): Promise<void> {
   window.setInterval(() => {
     promote(); // picks the next idle moment if a round was running
     reloadWhenSafe();
-  }, 15000);
+  }, SW_UPDATE_POLL_MS);
 }
