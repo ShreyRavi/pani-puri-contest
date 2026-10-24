@@ -111,15 +111,12 @@ let results: Result[] = (Array.isArray(rawResults) ? rawResults : [])
   .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i);
 let round: RoundState = IDLE;
 let expired: { name: string; savedAt: number; saved: number } | null = null;
-let recovered = false;
 
 /**
  * Restore the round saved by the last page, finishing one that is too old. Writes storage, so only the
- * tab that owns the stall calls it (main.ts boot, after the tab lock); runs once.
+ * tab that owns the stall calls it (main.ts boot, after the tab lock).
  */
 export function recoverSavedRound(): void {
-  if (recovered) return;
-  recovered = true;
   const loaded = normalizeRound(read<unknown>(KEYS.round, {}));
   const { savedAt, ...r } = loaded;
   if (isStale(r, savedAt, Date.now())) {

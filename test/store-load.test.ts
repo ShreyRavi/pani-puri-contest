@@ -24,6 +24,20 @@ describe('store load (O12 + review fix)', () => {
     expect(JSON.parse(mem.get('ppc.round.v1')!).phase).toBe('idle');
   });
 
+  // Value: protects=loading the store module writes nothing (a second, locked-out tab must not touch the owner's board);
+  //   fails_when=stale-round recovery runs at import again; why_new=every other case calls recoverSavedRound itself;
+  //   seam=none; no_claim=the tab lock itself (e2e)
+  it('writes nothing until recoverSavedRound is called', async () => {
+    const saved = JSON.stringify(liveRound(7));
+    mem.set('ppc.round.v1', saved);
+    const S = await import('../src/store');
+    expect(mem.get('ppc.round.v1')).toBe(saved);
+    expect(mem.has('ppc.results.v1')).toBe(false);
+    expect(S.allResults()).toHaveLength(0);
+    S.recoverSavedRound();
+    expect(S.allResults()).toHaveLength(1);
+  });
+
   it('saves a stale round that has a count instead of losing the score', async () => {
     mem.set('ppc.round.v1', JSON.stringify({ ...liveRound(7), rejected: 1, queue: [{ at: 1, openedAt: 1, peak: 0.6, confidence: 0.9, hand: true }] }));
     const S = await import('../src/store');

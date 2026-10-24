@@ -86,7 +86,7 @@ const setup = initSetup({
     text($('idle-seconds'), `${settings.roundSeconds} seconds`);
     applyEventLine();
   },
-  onBoardChanged: renderBoards,
+  onBoardChanged: syncResultToBoard,
 });
 
 /** Camera is unusable: offline after a failure, or an error before it ever worked. */
@@ -166,6 +166,20 @@ function showView(v: View): void {
     setup.fill();
     $<HTMLButtonElement>('btn-back').focus();
   }
+}
+
+/** After a board edit (Fix score, Setup › Edit a score), the result on screen must match its saved entry. */
+function syncResultToBoard(): void {
+  const r = getRound();
+  if (r.phase === 'result' && r.resultId) {
+    const saved = allResults().find((x) => x.id === r.resultId);
+    if (!saved) commit(R.IDLE); // the entry was deleted
+    else if (saved.score !== r.count) {
+      adjusted.add(saved.id);
+      commit({ ...r, count: saved.score, resultAt: Date.now() });
+    }
+  }
+  renderBoards();
 }
 
 function renderBoards(): void {
@@ -395,13 +409,7 @@ $('btn-fix').addEventListener('click', () => {
   const r = getRound();
   if (!r.resultId) return;
   const id = r.resultId;
-  openScoreDialog(id, () => {
-    const saved = allResults().find((x) => x.id === id);
-    if (!saved) return commit(R.IDLE);
-    if (saved.score !== getRound().count) adjusted.add(id);
-    commit({ ...getRound(), count: saved.score, resultAt: Date.now() });
-    renderBoards();
-  });
+  openScoreDialog(id, syncResultToBoard);
 });
 $('btn-back').addEventListener('click', closeSetup);
 $('btn-save').addEventListener('click', closeSetup);
@@ -644,7 +652,8 @@ function renderLive(r: R.RoundState, now: number): void {
   if (waiting) {
     text($('bite-title'), paused ? 'Under review' : afterZero ? 'Last bite? Referee decides' : 'Bite spotted!');
     const help = banner.querySelector<HTMLElement>('.bite-help')!;
-    help.classList.toggle('wrapped', help.offsetTop > $('bite-title').offsetTop + 8); // on its own line under the title
+    const left = banner.querySelector<HTMLElement>('.bite-left')!;
+    help.classList.toggle('wrapped', help.offsetTop >= left.offsetTop + left.offsetHeight); // on its own line under the title
     const more = $('bite-more');
     show(more, waiting > 1);
     text(more, `+${waiting - 1} more`);
@@ -756,10 +765,15 @@ function claimTab(onWait: () => void): Promise<void> {
   });
 }
 
+/** Everything on the stage except the "already open" overlay: inert until this tab owns the stall. */
+function setAppInert(inert: boolean): void {
+  for (const el of $('stage').children) if (el.id !== 'other-tab') (el as HTMLElement).inert = inert;
+}
+
 let waitedForTab = false;
+setAppInert(true); // no focus, clicks or form submit until the lock is ours
 void claimTab(() => {
   waitedForTab = true;
-  $('stage').inert = true; // the app under the overlay must not take focus, clicks or a form submit
   show($('other-tab'), true);
 }).then(() => {
   // The other tab went away. This page's copy of the board is from before it closed: start fresh.
@@ -767,8 +781,9 @@ void claimTab(() => {
   boot();
 });
 
-/** Runs once this tab owns the stall; until then nothing listens and the inert stage blocks the rest. */
+/** Runs once this tab owns the stall. Until then the app is inert and no hotkeys, storage writes or service worker run. */
 function boot(): void {
+  setAppInert(false);
   addEventListener('keydown', onKey);
   addEventListener('keyup', onKeyUp);
   recoverSavedRound();

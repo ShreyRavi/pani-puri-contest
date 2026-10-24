@@ -395,6 +395,8 @@ try {
   //   not checked; why_new=new behavior; seam=none; no_claim=two separate browser profiles (locks are per profile)
   await check('a second tab shows "already open", writes nothing and does not take over', async () => {
     const stored = () => page.evaluate(() => [localStorage.getItem('ppc.results.v1'), localStorage.getItem('ppc.round.v1')]);
+    // A stale saved round with a score: a tab that ran recovery would save it and rewrite the round.
+    await page.evaluate((idle) => localStorage.setItem('ppc.round.v1', JSON.stringify({ ...idle, phase: 'live', name: 'Ghost', count: 3, endsAt: Date.now() - 3600e3, savedAt: Date.now() - 3600e3 })), IDLE);
     const before = await stored();
     const second = await ctx.newPage();
     await second.addInitScript(() => {
@@ -411,6 +413,9 @@ try {
     await second.evaluate(() => document.getElementById('name-input').focus()); // inert: focus must not land
     await second.keyboard.type('Zed');
     await second.keyboard.press('Enter');
+    assert.notEqual(await second.evaluate(() => document.activeElement?.id), 'name-input', 'focus landed under the overlay');
+    assert.equal(await second.inputValue('#name-input'), '', 'typing reached the name field under the overlay');
+    assert.equal(await second.evaluate(() => document.getElementById('other-tab').inert), false, 'the overlay itself is inert');
     await second.keyboard.press('Escape');
     await second.keyboard.press('s');
     assert.ok(await second.isHidden('#view-setup'), 'the second tab reacted to a key');
@@ -419,7 +424,32 @@ try {
     await second.reload();
     await second.waitForSelector('#other-tab', { state: 'visible', timeout: 5000 });
     await second.close();
+    await page.evaluate(() => localStorage.setItem('ppc.round.v1', JSON.stringify({ phase: 'idle' })));
     await page.bringToFront();
+  });
+
+  // Value: protects=when the stall tab closes, the waiting tab takes over and resumes the saved round; fails_when=the
+  //   later lock grant never boots, or boots with the stale in-memory board; why_new=the two-tab check closes the waiting
+  //   tab, never the owner; seam=none; no_claim=a real browser crash of the owner
+  await check('closing the stall tab hands over to the waiting tab with the round intact', async () => {
+    const other = await browser.newContext({ viewport: { width: 1920, height: 1080 }, permissions: ['camera'] });
+    try {
+      const owner = await other.newPage();
+      await owner.goto(URL);
+      await owner.waitForSelector('#view-idle:not([hidden])');
+      const waiting = await other.newPage();
+      await waiting.goto(URL);
+      await waiting.waitForSelector('#other-tab', { state: 'visible', timeout: 5000 });
+      await owner.evaluate((idle) => localStorage.setItem('ppc.round.v1', JSON.stringify({ ...idle, phase: 'live', name: 'Hand', count: 3, endsAt: Date.now() + 40000, savedAt: Date.now() })), IDLE);
+      await owner.close();
+      await waiting.bringToFront();
+      await waiting.waitForSelector('#view-live:not([hidden])', { timeout: 10000 });
+      await expectText(waiting, '#live-count', '3');
+      assert.ok(await waiting.isHidden('#other-tab'), 'the overlay stayed up after takeover');
+    } finally {
+      await other.close();
+      await page.bringToFront();
+    }
   });
 
   // Value: protects=a later toast replacing the Undo button ends a Discard undo; fails_when=doUndo stops checking that its
@@ -431,6 +461,7 @@ try {
     await expectVisible(page, '#view-idle');
     await playRound('Nila', 1);
     await page.click('#btn-discard'); // the board is empty again
+    const discardedAt = Date.now();
     await expectVisible(page, '#view-idle');
     await page.keyboard.press('Escape');
     await page.keyboard.press('s');
@@ -439,6 +470,7 @@ try {
     await expectText(page, '#toast-text', 'Board is already empty');
     await page.keyboard.press('Escape');
     await expectVisible(page, '#view-idle');
+    assert.ok(Date.now() - discardedAt < 4500, 'too slow: the 5 s undo window, not the toast, would end the offer');
     await page.keyboard.press('ControlOrMeta+z');
     await page.waitForTimeout(200); // gstack-timing-ok: negative check, a wrongful restore gets a few frames
     await expectVisible(page, '#view-idle');
@@ -491,7 +523,26 @@ try {
   //   seam=none (a delaying proxy in front of the preview server); no_claim=captive-portal HTML responses
   await check('slow network: the cached page appears after the 3 s timeout', async () => {
     let delayMs = 0;
+    let mode = 'pass'; // 'pass' | 'slow-marked' | 'error'
     const proxy = http.createServer((req, res) => {
+      const isPage = req.url === '/' || req.url === '/index.html';
+      if (isPage && mode === 'error') {
+        res.writeHead(503, { 'content-type': 'text/html' });
+        return res.end('<h1>Service Unavailable</h1>');
+      }
+      if (isPage && mode === 'slow-marked') {
+        // A late page from a "newer deploy": must never become the offline shell.
+        return setTimeout(() => {
+          http.get({ host: '127.0.0.1', port: PORT, path: '/' }, (r) => {
+            let body = '';
+            r.on('data', (c) => (body += c));
+            r.on('end', () => {
+              res.writeHead(200, { 'content-type': 'text/html' });
+              res.end(body.replace('</body>', '<!-- LATE-DEPLOY --></body>'));
+            });
+          });
+        }, delayMs);
+      }
       const forward = () => {
         const up = http.request({ host: '127.0.0.1', port: PORT, path: req.url, method: req.method, headers: req.headers }, (r) => {
           res.writeHead(r.statusCode ?? 502, r.headers);
@@ -500,9 +551,7 @@ try {
         up.on('error', () => res.destroy());
         req.pipe(up);
       };
-      const isPage = req.url === '/' || req.url === '/index.html';
-      if (isPage && delayMs) setTimeout(forward, delayMs);
-      else forward();
+      forward();
     });
     await new Promise((r) => proxy.listen(PROXY_PORT, '127.0.0.1', r));
     const slowCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
@@ -512,12 +561,23 @@ try {
       await sp.goto(origin);
       await sp.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30000 });
       await sp.waitForFunction(async () => (await caches.keys()).some((k) => /^ppc-[0-9a-f]+$/.test(k)), null, { timeout: 30000 });
-      delayMs = 15000;
+      mode = 'slow-marked';
+      delayMs = 5000;
       const t0 = Date.now();
       await sp.reload({ waitUntil: 'domcontentloaded', timeout: 12000 });
-      await sp.waitForSelector('#view-idle:not([hidden]), #other-tab:not([hidden])', { timeout: 12000 });
+      await sp.waitForSelector('#view-idle:not([hidden])', { timeout: 12000 });
       const took = Date.now() - t0;
       assert.ok(took >= 2500 && took < 8000, `page took ${took} ms (expected the ~3 s cache fallback)`);
+      await sp.waitForTimeout(3500); // gstack-timing-ok: lets the late 5 s page land, then checks it was not cached
+      assert.ok(await sp.isHidden('#other-tab'), 'a reload showed the "already open" screen');
+      const shell = await sp.evaluate(async () => (await (await caches.match('./')).text()));
+      assert.ok(!shell.includes('LATE-DEPLOY'), 'a late page replaced the offline shell');
+      // An error page from the server (mid-deploy 5xx) falls back to the cached app, fast.
+      mode = 'error';
+      const t1 = Date.now();
+      await sp.reload({ waitUntil: 'domcontentloaded', timeout: 12000 });
+      await sp.waitForSelector('#view-idle:not([hidden])', { timeout: 12000 });
+      assert.ok(Date.now() - t1 < 2500, 'the error page was not replaced by the cached app quickly');
     } finally {
       await slowCtx.close();
       await new Promise((r) => proxy.close(r));

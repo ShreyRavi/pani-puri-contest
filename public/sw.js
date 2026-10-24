@@ -15,8 +15,8 @@
 // round is in progress, then reloads.
 //
 // Navigations are network-first with a short timeout (a redeploy is picked up
-// when online; weak venue wifi or a captive portal falls back to the cache fast);
-// everything else is cache-first.
+// when online; weak venue wifi, a captive portal or an error page falls back to
+// this build's precached page); everything else is cache-first.
 const BUILD = '__BUILD__';
 const MODELS = '__MODELS__';
 const CACHE = `ppc-${BUILD}`;
@@ -61,26 +61,14 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
+    // The offline shell is this build's own './', precached at install, never a page fetched later: a page
+    // from a newer deploy would not match this cache's assets. An error page (a 404/5xx mid-deploy, a
+    // login wall) and a network slower than NAV_TIMEOUT_MS both fall back to it.
     const cached = () => caches.match('./', { cacheName: CACHE });
-    let servedCache = false;
-    const network = fetch(req).then((res) => {
-      // Only the app's own page may become the offline shell, never another URL opened in a tab, and only
-      // when it is the page that rendered: a late page from a newer deploy would not match this cache's assets.
-      const isShell = new URL('./', self.location.href).pathname === url.pathname || url.pathname.endsWith('/index.html');
-      if (!servedCache && res.ok && isShell && (res.headers.get('content-type') || '').includes('text/html')) {
-        const copy = res.clone();
-        void caches.open(CACHE).then((c) => c.put('./', copy));
-      }
-      return res;
-    });
-    // Whichever comes first: the network page, or the cached page once NAV_TIMEOUT_MS passes.
+    const network = fetch(req).then((res) => (res.ok ? res : cached().then((hit) => hit || res)));
     const slow = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS))
       .then(() => cached())
-      .then((hit) => {
-        if (!hit) return network;
-        servedCache = true;
-        return hit;
-      });
+      .then((hit) => hit || network);
     e.respondWith(
       Promise.race([network, slow]).catch(() => cached().then((hit) => hit || Response.error())),
     );

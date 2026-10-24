@@ -18,6 +18,8 @@ const MAX_FRAME_ERRORS = 3;
 /** After a camera-only recovery, how long to wait for frames before rebuilding the worker too. */
 const CAMERA_ONLY_MS = 3000;
 const INIT_TIMEOUT_MS = 20000;
+/** First model load failed (slow venue wifi, a bad fetch): try again, backing off to this at most. */
+const INIT_RETRY_MAX_MS = 30000;
 
 type Listener = (r: VisionResult) => void;
 
@@ -63,6 +65,8 @@ export class Vision {
   private delegate: 'GPU' | 'CPU' | null = null;
   private pumpGen = 0;
   private everReady = false;
+  private initRetryTimer: number | null = null;
+  private initAttempts = 0;
   private lastResultAt = 0;
   private watchdog: number | null = null;
   private retryTimer: number | null = null;
@@ -114,7 +118,7 @@ export class Vision {
       const ok = await this.spawnWorker();
       if (!ok && !this.everReady && this.status.state !== 'error') {
         this.killWorker();
-        this.fail('model-failed'); // init hung past INIT_TIMEOUT_MS
+        this.initFailed(); // init hung past INIT_TIMEOUT_MS
       }
     } else {
       this.setStatus({ state: 'loading' });
@@ -257,8 +261,28 @@ export class Vision {
     if (this.everReady) this.goOffline('worker-crashed');
     else {
       this.killWorker(); // a later start() must spawn a fresh worker, not wait on this one
-      this.fail('model-failed');
+      this.initFailed();
     }
+  }
+
+  /**
+   * The face model never loaded. Show the cause and try again with backoff (5 s, 10 s, 20 s, then every
+   * 30 s), so a slow first download at the venue recovers without anyone reloading the page.
+   */
+  private initFailed(): void {
+    this.fail('model-failed');
+    if (this.initRetryTimer !== null) return;
+    const wait = Math.min(INIT_RETRY_MAX_MS, RETRY_MS * 2 ** this.initAttempts++);
+    this.initRetryTimer = window.setTimeout(() => {
+      this.initRetryTimer = null;
+      if (this.everReady || this.worker) return; // recovered, or a start() is already loading
+      void this.spawnWorker().then((ok) => {
+        if (!ok && !this.everReady && this.status.state !== 'error') {
+          this.killWorker();
+          this.initFailed();
+        }
+      });
+    }, wait);
   }
 
   // ---------- watchdog + recovery (only after the first ready) ----------

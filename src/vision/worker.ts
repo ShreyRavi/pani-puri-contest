@@ -68,7 +68,7 @@ function ensureHands(): Promise<void> {
     HandLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/hand_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numHands: d === 'GPU' ? 2 : 1, // same CPU saving as the face model,
+      numHands: d === 'GPU' ? 2 : 1, // one hand on the CPU fallback: a second doubles the per-frame cost, as with faces
     }),
   ).then(
     (h) => {
