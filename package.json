@@ -9,8 +9,8 @@
     "dev": "vite",
     "prebuild": "node scripts/fetch-models.mjs",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 4173",
-    "stall": "npm run build && vite preview --port 4173 --open",
+    "preview": "vite preview --port 4173 --strictPort",
+    "stall": "npm run build && vite preview --port 4173 --strictPort --open",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

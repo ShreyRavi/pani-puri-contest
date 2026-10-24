@@ -1,14 +1,17 @@
-// Offline cache for the stall laptop. Models + wasm + hashed assets are
-// cache-first (they never change under the same URL); the page itself is
-// network-first so a rebuild is picked up when online, cache when not.
-const CACHE = 'ppc-v1';
-const PRECACHE = [
-  './',
-  './mediapipe/face_landmarker.task',
-  './mediapipe/hand_landmarker.task',
-  './mediapipe/wasm/vision_wasm_module_internal.js',
-  './mediapipe/wasm/vision_wasm_module_internal.wasm',
-];
+// Offline cache for the stall laptop.
+//
+// This file is a template: on `vite build`, the precache plugin in
+// vite.config.ts rewrites dist/sw.js, replacing the PRECACHE expression with
+// the real list of emitted assets + MediaPipe files and the BUILD token with a
+// content hash, so every changed build gets a fresh cache name. Unbuilt, it is
+// still valid JS and just precaches the page.
+//
+// Navigations are network-first (a redeploy is picked up when online, cache
+// when not); everything else is cache-first (hashed assets and models never
+// change under the same URL).
+const BUILD = '__BUILD__';
+const CACHE = `ppc-${BUILD}`;
+const PRECACHE = self.__PRECACHE__ || ['./'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -37,17 +40,19 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          void caches.open(CACHE).then((c) => c.put('./', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            void caches.open(CACHE).then((c) => c.put('./', copy));
+          }
           return res;
         })
-        .catch(() => caches.match('./')),
+        .catch(() => caches.match('./', { cacheName: CACHE }).then((hit) => hit || Response.error())),
     );
     return;
   }
 
   e.respondWith(
-    caches.match(req).then(
+    caches.match(req, { cacheName: CACHE }).then(
       (hit) =>
         hit ||
         fetch(req).then((res) => {
