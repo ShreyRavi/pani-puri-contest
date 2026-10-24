@@ -74,8 +74,9 @@ vision.on((r) => {
   const ev = detector.push({ t: r.t, ratio: r.ratio, handNear: r.handNear });
   if (!ev) return;
   setup.logEvent(ev, now - r.t);
-  if (ev.kind !== 'candidate' || round.phase !== 'live') return;
-  round = R.candidate(round, { at: Date.now(), peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, Date.now());
+  if (ev.kind !== 'candidate') return;
+  const openedAt = Date.now() - (performance.now() - ev.openedAt);
+  round = R.candidate(round, { at: Date.now(), openedAt, peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, Date.now());
   commit(round);
 });
 
@@ -132,6 +133,7 @@ function commit(next: R.RoundState): void {
       name: next.name,
       score: next.count,
       rejected: next.rejected,
+      notCounted: next.notCounted,
       seconds: Math.round(next.durationMs / 1000),
       at: Date.now(),
     });
@@ -163,6 +165,13 @@ function commit(next: R.RoundState): void {
   }
 }
 
+function roundOptions(): R.StartOptions {
+  return {
+    windowMs: settings.windowSeconds * 1000,
+    autoConfirmMs: settings.mode === 'hybrid' ? settings.autoConfirmSeconds * 1000 : 0,
+  };
+}
+
 function startRound(): void {
   const input = $<HTMLInputElement>('name-input');
   const name = input.value.trim();
@@ -177,14 +186,14 @@ function startRound(): void {
   enterFullscreen();
   baselineSamples = [];
   input.blur();
-  commit(R.start(name, settings.roundSeconds * 1000, Date.now()));
+  commit(R.start(name, settings.roundSeconds * 1000, Date.now(), roundOptions()));
 }
 
 function rerun(): void {
   const r = getRound();
   if (r.resultId) removeResult(r.resultId);
   baselineSamples = [];
-  commit(R.start(r.name, settings.roundSeconds * 1000, Date.now()));
+  commit(R.start(r.name, settings.roundSeconds * 1000, Date.now(), roundOptions()));
 }
 
 function discard(): void {
@@ -245,7 +254,7 @@ $<HTMLFormElement>('signup').addEventListener('submit', (e) => {
 });
 $('idle-setup').addEventListener('click', openSetup);
 $('btn-confirm').addEventListener('click', () => commit(R.confirm(getRound(), Date.now())));
-$('btn-reject').addEventListener('click', () => commit(R.reject(getRound())));
+$('btn-reject').addEventListener('click', () => commit(R.reject(getRound(), Date.now(), settings.mode)));
 $('btn-plus').addEventListener('click', () => commit(R.adjust(getRound(), 1, Date.now())));
 $('btn-minus').addEventListener('click', () => commit(R.adjust(getRound(), -1, Date.now())));
 $('btn-pause').addEventListener('click', () => commit(R.togglePause(getRound(), Date.now())));
@@ -317,7 +326,7 @@ function onKey(e: KeyboardEvent): void {
         return commit(R.confirm(r, now));
       case 'x':
       case 'X':
-        return commit(R.reject(r));
+        return commit(R.reject(r, now, settings.mode));
       case '+':
       case '=':
         e.preventDefault();
@@ -369,7 +378,7 @@ let lastArmDigit = 0;
 function frame(): void {
   requestAnimationFrame(frame);
   const now = Date.now();
-  let r = R.tick(getRound(), now, settings.mode === 'hybrid' ? settings.autoConfirmSeconds * 1000 : 0);
+  let r = R.tick(getRound(), now);
   if (R.shouldReturnToIdle(r, now) && !$<HTMLDialogElement>('score-dialog').open) r = R.IDLE;
   if (r !== getRound()) commit(r);
 
@@ -449,16 +458,13 @@ function renderLive(r: R.RoundState, now: number): void {
   text($('live-chase-text'), chaseLine(allResults(), r.count));
 
   const banner = $('bite-banner');
-  show(banner, !!r.pending);
-  if (r.pending) {
-    text($('bite-title'), r.phase === 'buzzer' ? 'Last bite?' : 'Bite spotted!');
-    text($('bite-conf'), `confidence ${r.pending.confidence.toFixed(2)}`);
-  }
+  show(banner, r.queue.length > 0);
+  if (r.queue.length) text($('bite-title'), r.phase === 'buzzer' ? 'Last bite?' : 'Bite spotted!');
   const faceGone = vision.status.state === 'ready' && performance.now() - lastFaceAt > FACE_LOST_MS;
   show($('stepback'), r.phase === 'live' && faceGone);
 
-  $<HTMLButtonElement>('btn-confirm').disabled = !r.pending;
-  $<HTMLButtonElement>('btn-reject').disabled = !r.pending;
+  $<HTMLButtonElement>('btn-confirm').disabled = !r.queue.length;
+  $<HTMLButtonElement>('btn-reject').disabled = !r.queue.length;
   text($('btn-pause'), r.phase === 'paused' ? 'Resume (P)' : 'Pause (P)');
   const armed = now < escArmedUntil;
   const end = $('btn-end');

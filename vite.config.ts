@@ -41,5 +41,5 @@ function precacheManifest(): Plugin {
 export default defineConfig({
   plugins: [precacheManifest()],
   worker: { format: 'es' },
-  test: { environment: 'node' },
+  test: { environment: 'node', include: ['test/**/*.test.ts'], exclude: ['.claude/**', 'node_modules/**', 'dist/**'] },
 });
