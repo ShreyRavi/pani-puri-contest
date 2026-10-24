@@ -1,0 +1,27 @@
+{
+  "name": "pani-puri-challenge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "fetch-models": "node scripts/fetch-models.mjs",
+    "predev": "node scripts/fetch-models.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/fetch-models.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "stall": "npm run build && vite preview --port 4173 --open",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@fontsource/rubik": "^5.3.0",
+    "@fontsource/titan-one": "^5.3.0",
+    "@mediapipe/tasks-vision": "^1.1.1"
+  }
+}
