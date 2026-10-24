@@ -352,7 +352,10 @@ export class Vision {
     } finally {
       this.retrying = false;
     }
-    if (this.offline) this.queueRetry(cameraOnly ? CAMERA_ONLY_MS : RETRY_MS);
+    // A respawned worker that is ready but still compiling its first inference gets the same grace as at
+    // start-up; retrying sooner would kill it mid-compile and loop.
+    const next = this.awaitingFirstFrame && this.delegate ? FIRST_FRAME_MS : cameraOnly ? CAMERA_ONLY_MS : RETRY_MS;
+    if (this.offline) this.queueRetry(next);
   }
 
   // ---------- frame pump ----------

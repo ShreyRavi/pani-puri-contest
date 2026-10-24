@@ -283,3 +283,23 @@ describe('paused and buzzer edge cells', () => {
     expect(R.tick(s, 63000 + R.DEFAULT_DETECT_MS + 1).phase).toBe('result');
   });
 });
+
+// Value: protects=Space/X during the post-buzzer hold ("Last bite? Referee decides") counts or rejects the bite and
+//   ends the round right away; fails_when=hold decisions stop finishing the round; why_new=earlier tests decide inside
+//   the detect window only; seam=none; no_claim=none beyond protects
+describe('decisions during the post-buzzer hold', () => {
+  const held = () => R.tick(R.candidate(liveAt(), bite(62500), 'hybrid', 62500), 66000); // past detectUntil (64500)
+  it('confirm counts the bite and the round ends at once', () => {
+    let s = held();
+    expect(s.phase).toBe('buzzer');
+    s = R.confirm(s, 66000);
+    expect(s.count).toBe(1);
+    expect(R.tick(s, 66000)).toMatchObject({ phase: 'result', resultAt: 66000, queue: [] });
+  });
+  it('reject drops the bite and the round ends at once', () => {
+    let s = R.reject(held(), 66000);
+    expect(s).toMatchObject({ count: 0, rejected: 1 });
+    s = R.tick(s, 66000);
+    expect(s).toMatchObject({ phase: 'result', resultAt: 66000 });
+  });
+});

@@ -157,7 +157,7 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .board-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 20px; color: var(--muted); }
 .board-foot-note { font-size: 28px; color: var(--sand); } /* crowd text: 28px minimum (R8, DD19) */
 .btn-ghost-sm {
-  display: inline-flex; align-items: center; gap: 8px; color: var(--muted); background: transparent;
+  display: inline-flex; align-items: center; gap: 8px; color: var(--sand); background: transparent;
   padding: 10px 14px; border-radius: 10px; border: 2px solid var(--panel-edge); font-size: 20px; white-space: nowrap; flex: none;
 }
 
@@ -351,7 +351,7 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .dark-warn { background: #3a1420; border: 2px solid var(--chilli); color: var(--cream); border-radius: 12px; padding: 10px 14px; font-size: 20px; font-weight: 500; }
 .latency { font-size: 24px; font-weight: 700; color: var(--cream); font-variant-numeric: tabular-nums; }
 .latency.over { color: var(--warn-text); }
-.latency-sub { font-size: 18px; color: var(--muted); }
+.latency-sub { font-size: 18px; color: var(--sand); }
 .meter-row { display: flex; justify-content: space-between; font-size: 20px; color: var(--sand); }
 .meter-val { color: var(--cream); font-weight: 700; font-variant-numeric: tabular-nums; }
 .meter { position: relative; height: 36px; border-radius: 999px; background: var(--ground); overflow: hidden; }

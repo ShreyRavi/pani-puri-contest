@@ -35,10 +35,27 @@ export interface ToastAction {
 }
 
 let toastTimer = 0;
-/** Short operator message at the top of the TV safe area, optionally with one action button. */
+/** A plain message that arrived while an Undo toast was up; shown when that toast ends. */
+let queued: string | null = null;
+
+function endToast(): void {
+  $('toast').hidden = true;
+  const next = queued;
+  queued = null;
+  if (next) toast(next);
+}
+
+/**
+ * Short operator message at the top of the TV safe area, optionally with one action button. A plain
+ * message never replaces a toast whose action is still up (a "Camera back" must not eat an Undo).
+ */
 export function toast(message: string, action?: ToastAction): void {
   const el = $('toast');
   const btn = $<HTMLButtonElement>('toast-action');
+  if (!action && toastActionShowing()) {
+    queued = message;
+    return;
+  }
   $('toast-text').textContent = message;
   btn.hidden = !action;
   btn.onclick = null;
@@ -48,19 +65,19 @@ export function toast(message: string, action?: ToastAction): void {
       // Run first: the action may check that its offer is still on screen, or show its own toast.
       const shown = toastTimer;
       action.run();
-      if (toastTimer === shown) el.hidden = true;
+      if (toastTimer === shown) endToast();
     };
   }
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), Math.max(1000, action?.ms ?? 2200));
+  toastTimer = window.setTimeout(endToast, Math.max(1000, action?.ms ?? 2200));
 }
 
 /** Take the toast down now, action and timer included. */
 export function hideToast(): void {
   clearTimeout(toastTimer);
-  $('toast').hidden = true;
   $<HTMLButtonElement>('toast-action').onclick = null;
+  endToast();
 }
 
 /** True while a toast with an action button is on screen. */

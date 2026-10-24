@@ -101,9 +101,9 @@ webcam 640×480 ─▶ main thread: createImageBitmap (one frame in flight)
 
 - **Mouth-open ratio:** inner-lip gap (landmarks 13–14) divided by mouth width (61–291).
 - **Bite candidate:** the ratio rises above **open** (default 0.45), then falls below **close** (0.20) within the **bite window** (1.2 s), with at least **cooldown** (1.5 s) since the last candidate. In Relative mode the fall is "Drop below the peak" instead of below a fixed line.
-- **Baseline:** captured during the 3-2-1. If someone's resting mouth sits above the close line, close is raised to baseline + 0.05 for that round.
+- **Baseline:** captured during the 3-2-1 (frames with a hand at the mouth are ignored). If someone's resting mouth sits above the close line, close is raised to baseline + 0.05 for that round, at most 0.10 above the set close line and always below open.
 - **Hand gate (optional):** a fingertip within 80 px of the mouth center in the 600 ms before the open. The 80 px is scaled by face size, so distance from the camera doesn't matter.
-- **Too dark:** a face was found in fewer than half the frames over the last 2 s, or the picture's mean brightness is below 45/255. Face Landmarker gives no per-face confidence score, so these two signals stand in for one.
+- **Too dark:** on the TV, the picture's mean brightness is below 45/255. In Setup it also shows when a face was found in fewer than half the frames over the last 2 s (Face Landmarker gives no per-face confidence score, so the face rate stands in for one).
 - **Latency:** measured from the camera's capture timestamp to the bite decision on the main thread. Setup shows p50 and p95 over the last 100 frames. The count paints on the next frame.
 
 Code map: [src/detector.ts](src/detector.ts) (pure detector) · [src/round.ts](src/round.ts) (pure state machine) · [src/vision/](src/vision/) (camera + worker) · [src/store.ts](src/store.ts) (localStorage) · [src/main.ts](src/main.ts) (views, hotkeys, loop) · [public/sw.js](public/sw.js) (offline cache).
@@ -118,6 +118,8 @@ npm run typecheck
 ```
 
 `npm run fetch-models` copies the MediaPipe WASM out of `node_modules` and downloads the two `.task` models into `public/mediapipe/`, which is gitignored. It runs automatically before `dev` and `build`, and skips models that are already there.
+
+Don't upgrade `@mediapipe/tasks-vision` on the day of an event: the WASM and model files keep fixed names, so a laptop that loads the new deploy before its service worker updates can mix new code with the old cached WASM until the update finishes.
 
 ## Troubleshooting
 

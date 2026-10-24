@@ -130,6 +130,8 @@ export class BiteDetector {
   push(f: DetectorFrame): DetectorEvent | null {
     if (f.handNear) this.lastHandAt = f.t;
     if (f.ratio == null) {
+      // Held (absolute) waits for a real close; a hand hiding the face must not re-arm it with the mouth open.
+      if (this.phase === 'held' && this.cfg.mode === 'absolute') return null;
       // Face lost mid-bite: abandon it rather than guess.
       this.phase = 'closed';
       this.trough = null;

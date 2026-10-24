@@ -122,7 +122,9 @@ vision.on((r) => {
   setup.logEvent(ev, now - r.t);
   if (ev.kind !== 'candidate') return;
   const openedAt = Date.now() - (performance.now() - ev.openedAt);
-  round = R.candidate(round, { at: Date.now(), openedAt, peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, Date.now());
+  const now2 = Date.now();
+  round = R.tick(getRound(), now2); // a bite landing just after 0:00 must face the buzzer rules, not 'live'
+  round = R.candidate(round, { at: now2, openedAt, peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, now2);
   commit(round);
 });
 
@@ -286,13 +288,14 @@ function doUndo(): void {
   if (!u || Date.now() > u.until) return;
   // Only from the screen it was offered on: never over the next contestant's round.
   if (u.rerun ? getRound().phase !== 'arming' : getRound().phase !== 'idle') return;
-  // A Discard undo lives only as long as its toast button; a later toast replacing it ends the
-  // offer. A Re-run undo stays valid for the whole countdown, even after its toast is replaced.
+  // A Discard undo lives only as long as its toast button (plain toasts queue behind it, see dom.ts).
+  // A Re-run undo stays valid for the whole countdown.
   if (!u.rerun && !toastActionShowing()) return;
   undo = null;
   restoreResult(u.result);
   commit({ ...u.round, resultAt: Date.now() });
   renderBoards();
+  hideToast(); // the Undo toast is done; its replacement must not queue behind it
   toast(`${u.result.name}'s score restored`);
 }
 
@@ -594,6 +597,8 @@ function renderCamStatus(view: View): void {
   text(label, msg);
 }
 
+let bannerLayoutKey = '';
+
 function renderLive(r: R.RoundState, now: number): void {
   const off = cameraOff();
   const paused = r.phase === 'paused';
@@ -651,12 +656,18 @@ function renderLive(r: R.RoundState, now: number): void {
   show(banner, waiting > 0 && !off);
   if (waiting) {
     text($('bite-title'), paused ? 'Under review' : afterZero ? 'Last bite? Referee decides' : 'Bite spotted!');
-    const help = banner.querySelector<HTMLElement>('.bite-help')!;
-    const left = banner.querySelector<HTMLElement>('.bite-left')!;
-    help.classList.toggle('wrapped', help.offsetTop >= left.offsetTop + left.offsetHeight); // on its own line under the title
     const more = $('bite-more');
     show(more, waiting > 1);
     text(more, `+${waiting - 1} more`);
+    // Help text left-aligns once it sits on its own line under the title. Layout is read only when the
+    // banner's text changes, not every frame.
+    const layoutKey = `${$('bite-title').textContent}|${waiting > 1}`;
+    if (layoutKey !== bannerLayoutKey) {
+      bannerLayoutKey = layoutKey;
+      const help = banner.querySelector<HTMLElement>('.bite-help')!;
+      const left = banner.querySelector<HTMLElement>('.bite-left')!;
+      help.classList.toggle('wrapped', help.offsetTop >= left.offsetTop + left.offsetHeight);
+    }
     // Auto-confirm countdown for the oldest bite (DD24); frozen while paused.
     const bar = $('auto-bar');
     show(bar, r.autoConfirmMs > 0 && r.dueAt > 0);
@@ -808,6 +819,16 @@ function boot(): void {
     );
   }
 
+  // After an automatic update the page reloads out of fullscreen; only a key press can bring it back.
+  try {
+    if (sessionStorage.getItem('ppc.updated')) {
+      sessionStorage.removeItem('ppc.updated');
+      if (!e) notice('Updated to the latest version. Press F for fullscreen.');
+    }
+  } catch {
+    // storage blocked
+  }
+
   if (import.meta.env.PROD && 'serviceWorker' in navigator) void registerServiceWorker();
 }
 
@@ -833,7 +854,14 @@ async function registerServiceWorker(): Promise<void> {
   const reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   let pendingReload = false;
   const reloadWhenSafe = () => {
-    if (pendingReload && !updateIsBlocked()) location.reload();
+    if (pendingReload && !updateIsBlocked()) {
+      try {
+        sessionStorage.setItem('ppc.updated', '1');
+      } catch {
+        // storage blocked: the reload still happens, just without the notice
+      }
+      location.reload();
+    }
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) {

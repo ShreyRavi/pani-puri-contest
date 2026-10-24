@@ -32,7 +32,7 @@ const PAIRS: [string, string, string][] = [
   ['sand', 'ground', 'labels, "Now eating"'],
   ['muted', 'ground', 'paused timer'],
   ['#ff7a66', 'ground', 'countdown warning hint, low timer'],
-  ['sand', 'panel', 'board footer note'],
+  ['sand', 'panel', 'board footer note, Setup (S) button, latency caption'],
   ['muted', 'empty-row', 'open board rows'],
   ['cream', 'panel', 'paused and camera-off cards, board names'],
   ['marigold', 'panel', 'board title, chase line'],

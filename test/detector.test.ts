@@ -241,3 +241,16 @@ describe('helpers', () => {
     expect(median([])).toBeNull();
   });
 });
+
+// Value: protects=in Absolute mode a face lost while the mouth is held open cannot re-arm into a phantom bite;
+//   fails_when=face loss drops 'held' to 'closed'; why_new=the face-loss test only covers a closed mouth on return;
+//   seam=none; no_claim=real occlusion timing
+describe('absolute mode: held through a face loss', () => {
+  it('does not count a mouth that stayed open past the window and closes after the face returns', () => {
+    const d = new BiteDetector({ mode: 'absolute' });
+    const evs = [[0, 0.5], [1400, 0.5], [1500, null], [1600, 0.5], [1800, 0.1]].map(([t, ratio]) =>
+      d.push({ t: t as number, ratio: ratio as number | null, handNear: false }),
+    );
+    expect(evs.filter((e) => e?.kind === 'candidate')).toHaveLength(0);
+  });
+});
