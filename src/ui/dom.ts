@@ -50,12 +50,21 @@ function endToast(): void {
  * message never replaces a toast whose action is still up (a "Camera back" must not eat an Undo).
  */
 export function toast(message: string, action?: ToastAction): void {
-  const el = $('toast');
-  const btn = $<HTMLButtonElement>('toast-action');
   if (!action && toastActionShowing()) {
     queued = message;
     return;
   }
+  showToast(message, action);
+}
+
+/** Replace whatever toast is up, an Undo included (its own result, e.g. "restored"). A queued message still follows. */
+export function toastNow(message: string): void {
+  showToast(message);
+}
+
+function showToast(message: string, action?: ToastAction): void {
+  const el = $('toast');
+  const btn = $<HTMLButtonElement>('toast-action');
   $('toast-text').textContent = message;
   btn.hidden = !action;
   btn.onclick = null;
@@ -73,11 +82,12 @@ export function toast(message: string, action?: ToastAction): void {
   toastTimer = window.setTimeout(endToast, Math.max(1000, action?.ms ?? 2200));
 }
 
-/** Take the toast down now, action and timer included. */
+/** Take the toast down now, action and timer included, and drop anything queued behind it (stale by then). */
 export function hideToast(): void {
   clearTimeout(toastTimer);
+  queued = null;
   $<HTMLButtonElement>('toast-action').onclick = null;
-  endToast();
+  $('toast').hidden = true;
 }
 
 /** True while a toast with an action button is on screen. */

@@ -333,6 +333,7 @@ export class Vision {
     const cameraSide = this.lastCause !== 'worker-crashed' && this.lastCause !== 'model-failed';
     const warm = !!this.worker && !!this.delegate;
     let cameraOnly = false;
+    let pumped = false;
     try {
       // Most stalls are a bumped USB cable: reopen the camera and keep the warm model. Only
       // rebuild the worker if the camera did come back but frames still don't flow.
@@ -347,14 +348,17 @@ export class Vision {
         this.cameraOnlyOpened = false;
         const ready = this.spawnWorker();
         const camera = await this.openCamera();
-        if ((await ready) && camera) this.startPump();
+        if ((await ready) && camera) {
+          this.startPump();
+          pumped = true;
+        }
       }
     } finally {
       this.retrying = false;
     }
     // A respawned worker that is ready but still compiling its first inference gets the same grace as at
     // start-up; retrying sooner would kill it mid-compile and loop.
-    const next = this.awaitingFirstFrame && this.delegate ? FIRST_FRAME_MS : cameraOnly ? CAMERA_ONLY_MS : RETRY_MS;
+    const next = pumped && this.awaitingFirstFrame ? FIRST_FRAME_MS : cameraOnly ? CAMERA_ONLY_MS : RETRY_MS;
     if (this.offline) this.queueRetry(next);
   }
 

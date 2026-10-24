@@ -303,3 +303,20 @@ describe('decisions during the post-buzzer hold', () => {
     expect(s).toMatchObject({ phase: 'result', resultAt: 66000 });
   });
 });
+
+// Value: protects=a bite only counts if the mouth opened while the clock ran: not during the 3-2-1, and not after 0:00
+//   even when the frame loop hasn't ticked the round to the buzzer yet; fails_when=accepts() takes any live candidate;
+//   why_new=earlier tests only fed bites well inside the live window; seam=none; no_claim=frame timing in the browser
+describe('bite timing at GO and at 0:00', () => {
+  it('rejects a bite whose mouth opened during the countdown', () => {
+    const live = liveAt(0); // GO at 3000
+    expect(R.candidate(live, bite(3005, 2900), 'auto', 3005).count).toBe(0);
+    expect(R.candidate(live, bite(3400, 3100), 'auto', 3400).count).toBe(1);
+  });
+  it('judges a bite after 0:00 by the buzzer rule even before the round is ticked', () => {
+    const live = liveAt(0); // 0:00 at 63000, still phase 'live' here
+    expect(R.candidate(live, bite(63200, 63100), 'auto', 63200).count).toBe(0); // opened after zero
+    expect(R.candidate(live, bite(63200, 62900), 'auto', 63200).count).toBe(1); // opened before zero
+    expect(R.candidate(live, bite(65000, 62900), 'auto', 65000).count).toBe(0); // past the detect window
+  });
+});

@@ -475,6 +475,8 @@ try {
     await page.keyboard.press('ControlOrMeta+z');
     await expectVisible(page, '#view-result');
     assert.deepEqual(await board('Nila'), [1]);
+    await expectText(page, '#toast-text', "Nila's score restored");
+    await expectText(page, '#toast-text', 'Board is already empty', 5000); // the queued message follows the undo
     await backToIdle();
   });
 

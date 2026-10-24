@@ -165,7 +165,13 @@ function step(s: RoundState, now: number): RoundState {
 
 /** Can a candidate whose mouth opened at `openedAt` still enter this round at `now`? */
 export function accepts(s: RoundState, openedAt: number, now: number): boolean {
-  if (s.phase === 'live') return true;
+  if (s.phase === 'live') {
+    // A mouth that opened during the 3-2-1 is not a bite of this round.
+    if (openedAt < s.endsAt - s.durationMs) return false;
+    // Past 0:00 but not yet ticked to the buzzer (the frame loop hasn't run): same rule as the buzzer.
+    if (now >= s.endsAt) return openedAt < s.endsAt && now < s.endsAt + s.detectMs;
+    return true;
+  }
   if (s.phase === 'buzzer') return now < s.detectUntil && openedAt < s.endsAt;
   return false;
 }

@@ -25,7 +25,7 @@ import {
   type Settings,
 } from './store';
 import { chaseLine, renderBoard } from './ui/board';
-import { $, clock, hideToast, notice, plural, show, text, toast, toastActionShowing } from './ui/dom';
+import { $, clock, hideToast, notice, plural, show, text, toast, toastActionShowing, toastNow } from './ui/dom';
 import { updateBlocked } from './update';
 import { CameraStage } from './ui/overlay';
 import { initSetup, openScoreDialog } from './ui/setup';
@@ -122,9 +122,8 @@ vision.on((r) => {
   setup.logEvent(ev, now - r.t);
   if (ev.kind !== 'candidate') return;
   const openedAt = Date.now() - (performance.now() - ev.openedAt);
-  const now2 = Date.now();
-  round = R.tick(getRound(), now2); // a bite landing just after 0:00 must face the buzzer rules, not 'live'
-  round = R.candidate(round, { at: now2, openedAt, peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, now2);
+  // R.accepts judges timing (bites opened before GO, or after 0:00 before the next frame ticks).
+  round = R.candidate(round, { at: Date.now(), openedAt, peak: ev.peak, confidence: ev.confidence, hand: ev.hand }, settings.mode, Date.now());
   commit(round);
 });
 
@@ -295,8 +294,7 @@ function doUndo(): void {
   restoreResult(u.result);
   commit({ ...u.round, resultAt: Date.now() });
   renderBoards();
-  hideToast(); // the Undo toast is done; its replacement must not queue behind it
-  toast(`${u.result.name}'s score restored`);
+  toastNow(`${u.result.name}'s score restored`); // replaces the Undo toast; anything queued behind it follows
 }
 
 function rerun(): void {
@@ -661,8 +659,8 @@ function renderLive(r: R.RoundState, now: number): void {
     text(more, `+${waiting - 1} more`);
     // Help text left-aligns once it sits on its own line under the title. Layout is read only when the
     // banner's text changes, not every frame.
-    const layoutKey = `${$('bite-title').textContent}|${waiting > 1}`;
-    if (layoutKey !== bannerLayoutKey) {
+    const layoutKey = `${$('bite-title').textContent}|${waiting > 1}|${innerWidth}`;
+    if (!off && layoutKey !== bannerLayoutKey) { // a hidden banner measures as 0: wait until it shows
       bannerLayoutKey = layoutKey;
       const help = banner.querySelector<HTMLElement>('.bite-help')!;
       const left = banner.querySelector<HTMLElement>('.bite-left')!;
@@ -823,7 +821,7 @@ function boot(): void {
   try {
     if (sessionStorage.getItem('ppc.updated')) {
       sessionStorage.removeItem('ppc.updated');
-      if (!e) notice('Updated to the latest version. Press F for fullscreen.');
+      if (!e) notice('Updated to the latest version. Fullscreen comes back when the next round starts (or press Esc, then F).');
     }
   } catch {
     // storage blocked

@@ -142,6 +142,10 @@ export function initSetup(deps: SetupDeps) {
     $('meter-open-line').style.left = `${open * 100}%`;
     ol.style.left = `${open * 100}%`;
     show(cl, closeAt != null);
+    // Near each other the two centred labels would overlap: hang close to the left of its line, open to the right.
+    const tight = closeAt != null && open - closeAt < 0.16;
+    cl.style.transform = tight ? 'translateX(-100%)' : '';
+    ol.style.transform = tight ? 'translateX(0)' : '';
     text(cl, st.mode === 'relative' ? `drop ${settings.drop.toFixed(2)}` : `close ${(closeAt ?? 0).toFixed(2)}`);
     text(ol, `open ${open.toFixed(2)}`);
   }

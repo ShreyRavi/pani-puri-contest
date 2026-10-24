@@ -168,6 +168,19 @@ describe('Vision recovery after the first ready', () => {
     expect(recover).toHaveBeenCalledTimes(1);
   });
 
+  it('no first-frame grace when the respawn could not open the camera', async () => {
+    const { v } = await readyVision();
+    cameraWorks = false;
+    FakeWorker.all[0].onerror?.({ message: 'crash' });
+    await vi.advanceTimersByTimeAsync(0); // respawn; the camera fails to open
+    FakeWorker.all[1].emit({ type: 'ready', delegate: 'GPU' });
+    await vi.advanceTimersByTimeAsync(0);
+    const calls = getUserMedia.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5100); // RETRY_MS, well short of FIRST_FRAME_MS
+    expect(getUserMedia.mock.calls.length).toBeGreaterThan(calls);
+    expect(v.offline).toBe(true);
+  });
+
   it('the stall watchdog takes the camera offline when results stop', async () => {
     const { v, offline } = await readyVision();
     await vi.advanceTimersByTimeAsync(2600); // STALL_MS + a watchdog tick
