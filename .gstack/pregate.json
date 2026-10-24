@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "src/styles.css": ["test/contrast.test.ts"],
+    "src/main.ts": [],
+    "src/ui/dom.ts": [],
+    "src/ui/setup.ts": [],
+    "src/vision/worker.ts": [],
+    "public/manifest.webmanifest": [],
+    "e2e/smoke.mjs": [],
+    "tsconfig.json": [],
+    "vite.config.ts": ["test/precache.test.ts"],
+    "vercel.json": [],
+    "package.json": [],
+    "package-lock.json": []
+  },
+  "guards": [
+    { "id": "e2e", "when": ["src/main.ts", "src/ui/**", "src/vision/**", "src/styles.css", "index.html", "public/**", "e2e/**", "vite.config.ts", "package.json"],
+      "command": "npm run e2e",
+      "fix": "run npm run e2e locally and fix the failing check" },
+    { "id": "build", "when": ["tsconfig.json", "vercel.json", "package.json", "package-lock.json", "vite.config.ts"],
+      "command": "npm run build",
+      "fix": "npm run build must pass (typecheck + vite build)" }
+  ],
+  "strays": { "allow": ["vercel.json", "DESIGN.md", "e2e"] }
+}
