@@ -35,6 +35,7 @@ The stage is a fixed 1920×1080 canvas, scaled to fit the window, because it is 
 | `--muted` | #8E7FA3 | paused timer, empty rows, operator meta |
 | `--warn-text` | #FF7A66 | countdown warning, low timer, error status |
 | `--marigold-deep` | #C98A12 | second stripe of the meter's waiting fill (non-text) |
+| `--line` | #6E5F85 | borders of outline buttons, inputs and Setup toggles; idle status dot (non-text) |
 
 ### Measured contrast
 

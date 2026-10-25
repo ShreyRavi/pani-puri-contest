@@ -85,7 +85,7 @@ How it behaves:
 - **Re-run round / Discard** on the result screen remove that score from the board, with a 5 s Undo (the toast's button, ⌘/Ctrl Z, or **Esc** during the re-run countdown).
 - **Page reloaded after a round ended:** the score is saved anyway and a notice says so.
 - **"Already open in another tab":** only one tab runs the stall, so two tabs can't overwrite each other's scores. Close the extra tab or window.
-- **Fix score** opens an editor. **Setup › Edit a score** fixes any entry, and **Export CSV** downloads the night's board.
+- **Fix score** opens an editor. **Setup › Edit a score** fixes any entry, and **Export CSV** downloads the night's board. In the editor, type the new count and press **Enter** to save, or **Esc** to cancel. An empty field never saves, so a cleared box can't turn a score into 0. Left alone for a minute, the editor closes without saving.
 
 ## How detection works
 
@@ -106,13 +106,13 @@ webcam 640×480 ─▶ main thread: createImageBitmap (one frame in flight)
 - **Too dark:** on the TV, the picture's mean brightness is below 45/255. In Setup it also shows when a face was found in fewer than half the frames over the last 2 s (Face Landmarker gives no per-face confidence score, so the face rate stands in for one).
 - **Latency:** measured from the camera's capture timestamp to the bite decision on the main thread. Setup shows p50 and p95 over the last 100 frames. The count paints on the next frame.
 
-Code map: [src/detector.ts](src/detector.ts) (pure detector) · [src/round.ts](src/round.ts) (pure state machine) · [src/vision/](src/vision/) (camera + worker) · [src/store.ts](src/store.ts) (localStorage) · [src/main.ts](src/main.ts) (views, hotkeys, loop) · [public/sw.js](public/sw.js) (offline cache).
+Code map: [src/detector.ts](src/detector.ts) (pure detector) · [src/round.ts](src/round.ts) (pure state machine) · [src/vision/](src/vision/) (camera + worker) · [src/store.ts](src/store.ts) (localStorage) · [src/main.ts](src/main.ts) (views, hotkeys, loop) · [src/ui/](src/ui/) (board, toasts, camera overlay, Setup and score editor) · [src/build/](src/build/) (CSP headers, precache manifest) · [public/sw.js](public/sw.js) (offline cache).
 
 ## Development
 
 ```sh
 npm run dev          # http://localhost:5173 (service worker disabled in dev)
-npm test             # unit tests: detector, round machine, store, board, contrast, service worker manifest
+npm test             # unit tests: detector, round machine, store, board, contrast, service worker manifest, face picker, camera recovery, update timing, CSP
 npm run e2e          # builds, then drives real Chrome with a fake camera (incl. offline with the server stopped)
 npm run typecheck
 ```
