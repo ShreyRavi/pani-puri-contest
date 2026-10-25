@@ -410,6 +410,7 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .dialog::backdrop { background: rgba(14, 6, 24, 0.75); }
 .dialog-form { display: flex; flex-direction: column; gap: 18px; }
 .dialog-actions { display: flex; gap: 12px; align-items: center; }
+#score-save { order: 1; } /* first in the DOM (Enter saves), last on screen */
 .spacer { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) {

@@ -591,6 +591,21 @@ try {
     await backToIdle();
   });
 
+  // Value: protects=typing a corrected score and pressing Enter in the Edit a score dialog saves it; fails_when=the
+  //   dialog's default (first) submit button is Cancel, so Enter discards the correction; why_new=the other dialog checks
+  //   click Save; seam=none; no_claim=none beyond protects
+  await check('Enter in the score dialog saves the corrected score', async () => {
+    await playRound('Enter', 2);
+    await page.click('#btn-fix');
+    await expectVisible(page, '#score-dialog');
+    await page.fill('#score-value', '5');
+    await page.press('#score-value', 'Enter');
+    await expectVisible(page, '#score-dialog', false);
+    await expectText(page, '#res-count', '5');
+    assert.deepEqual(await board('Enter'), [5]);
+    await backToIdle();
+  });
+
   const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const p2 = await denied.newPage();
   await check('camera blocked: camera-off card, + becomes primary, named cause', async () => {
