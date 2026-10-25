@@ -1,10 +1,20 @@
-// Pure bite detector. Feed it one frame of mouth data at a time; it emits a
-// candidate when the mouth opens past `open` and closes below `close` within
-// `windowMs`, respecting cooldown and the optional hand-near-mouth gate.
+// Pure bite detector. Feed it one frame of mouth data at a time.
+//
+// 'absolute' mode: a bite is the mouth opening past `open` and closing below
+// `closeThreshold` within `windowMs`.
+// 'relative' mode: a bite is the ratio rising past `open` AND at least `drop`
+// above the trough since the last close, then falling `drop` below its peak
+// within `windowMs`. This survives chewing with a half-open mouth.
+// Both modes respect cooldown and the optional hand-near-mouth gate.
+
+export type DetectorMode = 'absolute' | 'relative';
 
 export interface DetectorConfig {
+  mode: DetectorMode;
   open: number;
   close: number;
+  /** relative mode: rise above trough to open, fall below peak to close */
+  drop: number;
   windowMs: number;
   cooldownMs: number;
   requireHand: boolean;
@@ -12,8 +22,10 @@ export interface DetectorConfig {
 }
 
 export const DEFAULT_DETECTOR: DetectorConfig = {
+  mode: 'absolute',
   open: 0.45,
   close: 0.2,
+  drop: 0.15,
   windowMs: 1200,
   cooldownMs: 1500,
   requireHand: false,
@@ -29,17 +41,33 @@ export interface DetectorFrame {
 }
 
 export type DetectorEvent =
-  | { kind: 'candidate'; t: number; peak: number; hand: boolean; confidence: number }
-  | { kind: 'ignored'; t: number; peak: number; hand: boolean; reason: 'timeout' | 'cooldown' | 'no-hand' };
+  | { kind: 'candidate'; t: number; openedAt: number; peak: number; hand: boolean; confidence: number }
+  | {
+      kind: 'ignored';
+      t: number;
+      openedAt: number;
+      peak: number;
+      hand: boolean;
+      reason: 'timeout' | 'cooldown' | 'no-hand';
+    };
 
-type Phase = 'closed' | 'open' | 'held';
+export type DetectorPhase = 'closed' | 'open' | 'held';
+
+export interface DetectorState {
+  mode: DetectorMode;
+  phase: DetectorPhase;
+  peak: number | null;
+  trough: number | null;
+  closeLine: number;
+}
 
 export class BiteDetector {
   private cfg: DetectorConfig;
   private baseline: number | null = null;
-  private phase: Phase = 'closed';
+  private phase: DetectorPhase = 'closed';
   private openedAt = 0;
   private peak = 0;
+  private trough: number | null = null;
   private handAtOpen = false;
   private lastHandAt = -Infinity;
   private lastCandidateAt = -Infinity;
@@ -49,47 +77,99 @@ export class BiteDetector {
   }
 
   setConfig(cfg: Partial<DetectorConfig>): void {
+    const prevMode = this.cfg.mode;
     this.cfg = { ...this.cfg, ...cfg };
+    if (this.cfg.mode !== prevMode) {
+      // Switching algorithms mid-bite would mix incompatible state; start clean.
+      this.phase = 'closed';
+      this.trough = null;
+    }
   }
 
   get config(): Readonly<DetectorConfig> {
     return this.cfg;
   }
 
-  /** Resting mouth ratio from the countdown. Raises the close line for open-mouthed resters. */
+  /** Resting mouth ratio from the countdown. Raises the close line for open-mouthed resters (absolute mode). */
   setBaseline(b: number | null): void {
     this.baseline = b;
   }
 
   get closeThreshold(): number {
-    const c = this.cfg.close;
-    return this.baseline == null ? c : Math.min(this.cfg.open - 0.05, Math.max(c, this.baseline + 0.05));
+    const { open, close } = this.cfg;
+    if (this.baseline == null) return Math.min(close, open - 0.05);
+    return Math.min(open - 0.05, close + 0.1, Math.max(close, this.baseline + 0.05));
   }
 
-  reset(): void {
+  get state(): DetectorState {
+    const active = this.phase !== 'closed';
+    const closeLine =
+      this.cfg.mode === 'absolute' ? this.closeThreshold : active ? this.peak - this.cfg.drop : NaN;
+    return {
+      mode: this.cfg.mode,
+      phase: this.phase,
+      peak: active ? this.peak : null,
+      trough: this.trough,
+      closeLine,
+    };
+  }
+
+  /**
+   * Abandon any bite in progress. `keepCooldown` (face switch, camera recovery) keeps the
+   * cooldown since the last candidate, so a chew right after a counted bite can't count again.
+   */
+  reset(opts: { keepCooldown?: boolean } = {}): void {
     this.phase = 'closed';
     this.peak = 0;
+    this.trough = null;
+    this.handAtOpen = false;
     this.lastHandAt = -Infinity;
-    this.lastCandidateAt = -Infinity;
+    if (!opts.keepCooldown) this.lastCandidateAt = -Infinity;
   }
 
   push(f: DetectorFrame): DetectorEvent | null {
     if (f.handNear) this.lastHandAt = f.t;
     if (f.ratio == null) {
+      // Held (absolute) waits for a real close; a hand hiding the face must not re-arm it with the mouth open.
+      if (this.phase === 'held' && this.cfg.mode === 'absolute') return null;
       // Face lost mid-bite: abandon it rather than guess.
       this.phase = 'closed';
+      this.trough = null;
       return null;
     }
-    const r = f.ratio;
+    return this.cfg.mode === 'relative' ? this.pushRelative(f.t, f.ratio) : this.pushAbsolute(f.t, f.ratio);
+  }
+
+  private beginBite(t: number, r: number): void {
+    this.phase = 'open';
+    this.openedAt = t;
+    this.peak = r;
+    this.handAtOpen = t - this.lastHandAt <= this.cfg.handLookbackMs;
+  }
+
+  private handNow(t: number): boolean {
+    return this.handAtOpen || t - this.lastHandAt <= this.cfg.handLookbackMs;
+  }
+
+  /** Bite closed inside the window: apply cooldown, then hand gate, then emit. */
+  private finishBite(t: number, hand: boolean): DetectorEvent {
+    const peak = this.peak;
+    const openedAt = this.openedAt;
+    if (t - this.lastCandidateAt < this.cfg.cooldownMs) {
+      return { kind: 'ignored', t, openedAt, peak, hand, reason: 'cooldown' };
+    }
+    if (this.cfg.requireHand && !hand) {
+      return { kind: 'ignored', t, openedAt, peak, hand, reason: 'no-hand' };
+    }
+    this.lastCandidateAt = t;
+    return { kind: 'candidate', t, openedAt, peak, hand, confidence: confidence(peak, this.cfg.open, hand) };
+  }
+
+  private pushAbsolute(t: number, r: number): DetectorEvent | null {
     const close = this.closeThreshold;
 
     if (this.phase === 'closed') {
-      if (r > this.cfg.open) {
-        this.phase = 'open';
-        this.openedAt = f.t;
-        this.peak = r;
-        this.handAtOpen = f.t - this.lastHandAt <= this.cfg.handLookbackMs;
-      }
+      if (r > this.cfg.open) this.beginBite(t, r);
       return null;
     }
 
@@ -101,23 +181,48 @@ export class BiteDetector {
 
     // phase === 'open'
     this.peak = Math.max(this.peak, r);
-    const hand = this.handAtOpen || f.t - this.lastHandAt <= this.cfg.handLookbackMs;
-    if (f.t - this.openedAt > this.cfg.windowMs) {
+    const hand = this.handNow(t);
+    if (t - this.openedAt > this.cfg.windowMs) {
       this.phase = r < close ? 'closed' : 'held';
-      return { kind: 'ignored', t: f.t, peak: this.peak, hand, reason: 'timeout' };
+      return { kind: 'ignored', t, openedAt: this.openedAt, peak: this.peak, hand, reason: 'timeout' };
     }
     if (r >= close) return null;
 
     this.phase = 'closed';
-    const peak = this.peak;
-    if (f.t - this.lastCandidateAt < this.cfg.cooldownMs) {
-      return { kind: 'ignored', t: f.t, peak, hand, reason: 'cooldown' };
+    return this.finishBite(t, hand);
+  }
+
+  private pushRelative(t: number, r: number): DetectorEvent | null {
+    const { open, drop } = this.cfg;
+
+    if (this.phase === 'closed') {
+      this.trough = this.trough == null ? r : Math.min(this.trough, r);
+      if (r > open && r - this.trough >= drop) this.beginBite(t, r);
+      return null;
     }
-    if (this.cfg.requireHand && !hand) {
-      return { kind: 'ignored', t: f.t, peak, hand, reason: 'no-hand' };
+
+    this.peak = Math.max(this.peak, r);
+
+    if (this.phase === 'held') {
+      // Mouth stayed open past the window; wait for a real fall from the peak before re-arming.
+      if (r <= this.peak - drop) {
+        this.phase = 'closed';
+        this.trough = r;
+      }
+      return null;
     }
-    this.lastCandidateAt = f.t;
-    return { kind: 'candidate', t: f.t, peak, hand, confidence: confidence(peak, this.cfg.open, hand) };
+
+    // phase === 'open'
+    const hand = this.handNow(t);
+    if (t - this.openedAt > this.cfg.windowMs) {
+      this.phase = 'held';
+      return { kind: 'ignored', t, openedAt: this.openedAt, peak: this.peak, hand, reason: 'timeout' };
+    }
+    if (r > this.peak - drop) return null;
+
+    this.phase = 'closed';
+    this.trough = r;
+    return this.finishBite(t, hand);
   }
 }
 

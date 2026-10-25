@@ -3,6 +3,7 @@
 
 import { FaceLandmarker, FilesetResolver, HandLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { mouthRatio } from '../detector';
+import { pickFace, type PickState } from './pick';
 import type { FromWorker, Point, ToWorker } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -20,8 +21,12 @@ let fileset: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>> | null =
 let face: FaceLandmarker | null = null;
 let hand: HandLandmarker | null = null;
 let handLoading: Promise<void> | null = null;
+/** After a failed hand-model load, wait before trying again instead of refetching every frame. */
+let handRetryAt = 0;
+const HAND_RETRY_MS = 30000;
 let delegate: 'GPU' | 'CPU' = 'GPU';
 let lastTs = 0;
+let pickState: PickState | null = null;
 const lumaCanvas = new OffscreenCanvas(32, 24);
 const lumaCtx = lumaCanvas.getContext('2d', { willReadFrequently: true })!;
 
@@ -45,7 +50,9 @@ async function init(b: string, hands: boolean): Promise<void> {
     FaceLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/face_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numFaces: 1,
+      // Two faces keep the lock sticky when a bystander leans in; on the CPU fallback the second
+      // face would double the per-frame cost, so track one there.
+      numFaces: d === 'GPU' ? 2 : 1,
       minFaceDetectionConfidence: 0.5,
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
@@ -56,15 +63,24 @@ async function init(b: string, hands: boolean): Promise<void> {
 }
 
 function ensureHands(): Promise<void> {
+  if (!handLoading && performance.now() < handRetryAt) return Promise.resolve();
   handLoading ??= create((d) =>
     HandLandmarker.createFromOptions(fileset!, {
       baseOptions: { modelAssetPath: `${base}mediapipe/hand_landmarker.task`, delegate: d },
       runningMode: 'VIDEO',
-      numHands: 2,
+      numHands: d === 'GPU' ? 2 : 1, // one hand on the CPU fallback: a second doubles the per-frame cost, as with faces
     }),
-  ).then((h) => {
-    hand = h;
-  });
+  ).then(
+    (h) => {
+      hand = h;
+    },
+    (err: unknown) => {
+      // Let a later frame retry the load instead of caching the failure forever.
+      handLoading = null;
+      handRetryAt = performance.now() + HAND_RETRY_MS;
+      post({ type: 'error', message: `hand model failed: ${String(err)}`, fatal: false, kind: 'hand' });
+    },
+  );
   return handLoading;
 }
 
@@ -89,19 +105,35 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
   const px = (p: NormalizedLandmark): Point => ({ x: p.x * w, y: p.y * h });
 
   const fr = face.detectForVideo(bitmap, ts);
-  const lm = fr.faceLandmarks[0];
+  const faces = fr.faceLandmarks.map((f) => {
+    const up = px(f[13]);
+    const lo = px(f[14]);
+    const l = px(f[61]);
+    const r = px(f[291]);
+    const fl = px(f[234]);
+    const rt = px(f[454]);
+    return {
+      lm: f,
+      up,
+      lo,
+      l,
+      r,
+      mouth: { x: (l.x + r.x) / 2, y: (up.y + lo.y) / 2 },
+      width: Math.hypot(rt.x - fl.x, rt.y - fl.y),
+    };
+  });
+  const pick = pickFace(faces, pickState);
+  pickState = pick.state;
+  const chosen = pick.index == null ? null : faces[pick.index];
+  const lm = chosen?.lm;
   let ratio: number | null = null;
   let mouth: Point | null = null;
   let faceWidth = 0;
   let lips: Point[] = [];
-  if (lm) {
-    const up = px(lm[13]);
-    const lo = px(lm[14]);
-    const l = px(lm[61]);
-    const r = px(lm[291]);
-    ratio = mouthRatio(up, lo, l, r);
-    mouth = { x: (l.x + r.x) / 2, y: (up.y + lo.y) / 2 };
-    faceWidth = Math.hypot(px(lm[454]).x - px(lm[234]).x, px(lm[454]).y - px(lm[234]).y);
+  if (chosen && lm) {
+    ratio = mouthRatio(chosen.up, chosen.lo, chosen.l, chosen.r);
+    mouth = chosen.mouth;
+    faceWidth = chosen.width;
     lips = LIPS.map((i) => ({ x: lm[i].x, y: lm[i].y }));
   }
 
@@ -127,6 +159,7 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
     type: 'result',
     t,
     faceFound: !!lm,
+    faceSwitched: pick.switched,
     ratio,
     mouth,
     faceWidth,
@@ -141,13 +174,13 @@ function frame(bitmap: ImageBitmap, t: number, hands: boolean): void {
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   if (m.type === 'init') {
-    init(m.base, m.hands).catch((err: unknown) => post({ type: 'error', message: String(err) }));
+    init(m.base, m.hands).catch((err: unknown) => post({ type: 'error', message: String(err), fatal: true, kind: 'init' }));
   } else if (m.type === 'frame') {
     try {
       frame(m.bitmap, m.t, m.hands);
     } catch (err) {
       m.bitmap.close();
-      post({ type: 'error', message: String(err) });
+      post({ type: 'error', message: String(err), fatal: false, kind: 'frame' });
     }
   }
 };

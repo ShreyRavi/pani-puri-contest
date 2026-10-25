@@ -25,6 +25,8 @@ export interface VisionResult {
   type: 'result';
   t: number;
   faceFound: boolean;
+  /** true on the frame the tracked face changed to a different (wider) person */
+  faceSwitched: boolean;
   ratio: number | null;
   /** mouth center in frame px (640x480) */
   mouth: Point | null;
@@ -41,5 +43,6 @@ export interface VisionResult {
 
 export type FromWorker =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
-  | { type: 'error'; message: string }
+  /** fatal: init failed. Non-fatal: one bad frame or an optional model (hands) failed. */
+  | { type: 'error'; message: string; fatal: boolean; kind: 'init' | 'frame' | 'hand' }
   | VisionResult;

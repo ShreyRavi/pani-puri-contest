@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Pani Puri Challenge</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='13' r='9' fill='%23FFB627'/%3E%3Cellipse cx='12' cy='10' rx='5' ry='2.5' fill='%231B0E2B'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1B0E2B">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 </head>
 <body>
 <div id="stage">
@@ -14,7 +17,7 @@
 <main id="view-idle" class="screen screen-idle" aria-label="Who's next">
   <header class="idle-header">
     <div class="stack-6">
-      <div class="eyebrow">Stall No. 7 · Carnival Corner</div>
+      <div class="eyebrow" id="idle-eyebrow">Stall No. 7 · Carnival Corner</div>
       <h1 class="title">Pani Puri Challenge</h1>
     </div>
     <div class="idle-facts">
@@ -55,7 +58,7 @@
       </div>
       <ol class="board-list" id="idle-board"></ol>
       <div class="board-foot">
-        <span>Scores saved on this laptop all night</span>
+        <span class="board-foot-note">Scores saved here all night</span>
         <button type="button" class="btn-ghost-sm" id="idle-setup"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Setup (S)</span></button>
       </div>
     </aside>
@@ -73,6 +76,7 @@
     <div class="live-clock">
       <div class="live-clock-row">
         <span class="live-clock-label">Time left</span>
+        <span class="pause-glyph" id="live-pause-glyph" aria-hidden="true" hidden><svg width="72" height="72" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></span>
         <span class="live-timer" id="live-timer" role="timer" aria-live="off">1:00</span>
       </div>
       <div class="progress" id="live-progress" role="progressbar" aria-label="Round time remaining" aria-valuemin="0" aria-valuemax="60" aria-valuenow="60">
@@ -90,11 +94,14 @@
         <svg aria-hidden="true" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         <span>Step back in!</span>
       </div>
+      <div class="cam-card paused-card" id="paused-card" hidden>Paused · referee check</div>
+      <div class="cam-card off-card" id="off-card" hidden>Camera off · referee is counting</div>
       <div class="bite-banner" id="bite-banner" role="status" hidden>
+        <div class="auto-bar" id="auto-bar" hidden><div class="auto-bar-fill" id="auto-bar-fill"></div></div>
         <div class="bite-left">
           <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1B0E2B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
           <span class="bite-title" id="bite-title">Bite spotted!</span>
-          <span class="bite-conf" id="bite-conf">confidence 0.91</span>
+          <span class="more-pill" id="bite-more" hidden>+2 more</span>
         </div>
         <div class="bite-help">Referee: Space to count it · X if not</div>
       </div>
@@ -110,10 +117,10 @@
     </aside>
   </div>
 
-  <footer aria-label="Referee controls" class="strip">
+  <footer aria-label="Referee controls" class="strip" id="live-strip">
     <div class="strip-group">
       <button type="button" class="btn btn-confirm" id="btn-confirm"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Count it <kbd class="kbd-confirm">Space</kbd></button>
-      <button type="button" class="btn btn-reject" id="btn-reject"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>Not a puri <kbd class="kbd-reject">X</kbd></button>
+      <button type="button" class="btn btn-reject" id="btn-reject"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg><span id="btn-reject-label">Not a puri</span> <kbd class="kbd-reject">X</kbd></button>
       <button type="button" class="btn btn-square" id="btn-plus" aria-label="Add one manually (plus key)">+1</button>
       <button type="button" class="btn btn-square" id="btn-minus" aria-label="Remove one manually (minus key)">−1</button>
     </div>
@@ -127,7 +134,7 @@
   <div class="arming" id="arming" hidden>
     <div class="arming-ready">Get ready, <span id="arming-name">Priya</span>!</div>
     <div class="arming-digit" id="arming-digit" aria-live="assertive">3</div>
-    <div class="arming-hint">Mouth closed, look at the camera</div>
+    <div class="arming-hint" id="arming-hint">Mouth closed, look at the camera</div>
   </div>
 </main>
 
@@ -142,9 +149,10 @@
         <span class="result-unit" id="res-unit">puris</span>
       </div>
       <div class="result-rank" id="res-rank-wrap">
-        <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1B0E2B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+        <svg id="res-trophy" aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1B0E2B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
         <span id="res-rank">New #1 on the board</span>
       </div>
+      <div class="adjusted-chip" id="res-adjusted" hidden>Adjusted by referee</div>
       <div class="result-sub" id="res-sub">In 60 seconds</div>
     </section>
 
@@ -172,13 +180,13 @@
   <header class="setup-header">
     <div class="setup-title-row">
       <h1 class="setup-title">Setup</h1>
-      <span class="setup-sub">Operator only · not shown to the crowd</span>
+      <span class="setup-sub">Shown on the TV · open between rounds</span>
     </div>
     <button type="button" class="btn btn-outline-gold" id="btn-back">Back to stall (Esc)</button>
   </header>
 
   <div class="setup-body">
-    <section aria-label="Settings" class="panel">
+    <section aria-label="Round settings" class="panel">
       <h2 class="panel-h">Round</h2>
       <div class="grid-2">
         <div class="field">
@@ -191,17 +199,16 @@
         </div>
       </div>
 
-      <h2 class="panel-h panel-h-gap">Counting mode</h2>
       <fieldset class="modes">
-        <legend class="sr-only">Counting mode</legend>
-        <label class="mode"><input type="radio" name="mode" value="auto"><span class="mode-text"><b>Auto</b><span>Camera counts every bite it sees. Fast, trusts the model.</span></span></label>
+        <legend class="panel-h legend-h">Counting mode</legend>
+        <label class="mode"><input type="radio" name="mode" value="auto"><span class="mode-text"><b>Auto</b><span>Camera counts every bite it sees. X undoes the last one.</span></span></label>
         <label class="mode"><input type="radio" name="mode" value="hybrid"><span class="mode-text"><b>Hybrid (recommended)</b><span>Camera flags a bite, referee confirms with Space or rejects with X.</span></span></label>
         <label class="mode"><input type="radio" name="mode" value="manual"><span class="mode-text"><b>Manual</b><span>Referee taps +1 per puri. Camera is only the show.</span></span></label>
       </fieldset>
 
-      <div class="grid-2 grid-gap-top">
+      <div class="grid-2">
         <div class="field">
-          <label for="set-autoconfirm">Auto-confirm after (seconds, 0 = never)</label>
+          <label for="set-autoconfirm">Auto-confirm (s, 0 = off)</label>
           <input id="set-autoconfirm" type="number" min="0" max="5" step="0.5">
         </div>
         <div class="field">
@@ -212,6 +219,18 @@
             <option value="muted">Muted</option>
           </select>
         </div>
+      </div>
+      <div class="field">
+        <label for="set-cooldown" class="label-split"><span>Minimum gap between bites</span><span class="c-cream" id="set-cooldown-val">1.5 s</span></label>
+        <input id="set-cooldown" type="range" min="0.5" max="4" step="0.1">
+      </div>
+      <label class="check">
+        <input type="checkbox" id="set-hand">
+        <span>Require hand near mouth <span class="check-sub">(cuts false hits from talking)</span></span>
+      </label>
+      <div class="field">
+        <label for="set-event">Event line (top of the sign-up screen)</label>
+        <input id="set-event" type="text" maxlength="40" autocomplete="off" spellcheck="false">
       </div>
     </section>
 
@@ -224,35 +243,44 @@
       <div class="setup-cam-row">
         <div class="cam-box setup-cam" id="setup-cam"><div class="cam-slot" data-cam-slot></div></div>
         <div class="setup-cam-side">
-          <div class="dark-warn" id="set-dark" role="alert" hidden>Too dark: face lost or picture dim. Turn on a light facing the contestant.</div>
+          <div class="dark-warn" id="set-dark" role="alert" hidden>Face lost or picture dim. Turn on a light facing the contestant.</div>
           <div class="latency" id="set-latency">Latency: measuring…</div>
-          <div class="latency-sub" id="set-latency-sub">camera capture → bite decision, last 100 frames</div>
+          <div class="latency-sub">camera capture → bite decision, last 100 frames</div>
         </div>
       </div>
 
+      <fieldset class="segmented" id="set-detection">
+        <legend class="segmented-legend">Bite rule</legend>
+        <label><input type="radio" name="detection" value="absolute"><span>Absolute</span></label>
+        <label><input type="radio" name="detection" value="relative"><span>Relative</span></label>
+      </fieldset>
+
       <div class="stack-10">
-        <div class="meter-row"><span>Mouth-open ratio, live</span><span class="meter-val" id="meter-value">–</span></div>
+        <div class="meter-row"><span>Mouth-open ratio, live</span><span class="meter-wait" id="meter-wait" hidden>Waiting for close</span><span class="meter-val" id="meter-value">–</span></div>
         <div class="meter" id="meter" role="meter" aria-label="Mouth-open ratio" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
           <div class="meter-fill" id="meter-fill"></div>
           <div class="meter-line meter-close" id="meter-close-line" aria-hidden="true"></div>
           <div class="meter-line meter-open" id="meter-open-line" aria-hidden="true"></div>
         </div>
         <div class="meter-legend"><span class="c-chutney" id="meter-close-label">close 0.20</span><span class="c-chilli" id="meter-open-label">open 0.45</span></div>
-        <div class="meter-help">Open wide, then close: the bar should cross the red line, then the green line. That is one bite.</div>
       </div>
 
       <div class="field">
-        <label for="set-sens" class="label-split"><span>Sensitivity (open threshold)</span><span class="c-cream" id="set-sens-val">0.45</span></label>
+        <label for="set-sens" class="label-split"><span>Mouth-open line <span class="check-sub">higher = fewer bites flagged</span></span><span class="c-cream" id="set-sens-val">0.45</span></label>
         <input id="set-sens" type="range" min="0.3" max="0.7" step="0.01">
       </div>
-      <div class="field">
-        <label for="set-cooldown" class="label-split"><span>Minimum gap between bites</span><span class="c-cream" id="set-cooldown-val">1.5 s</span></label>
-        <input id="set-cooldown" type="range" min="0.5" max="4" step="0.1">
+      <div class="field" id="field-drop">
+        <label for="set-drop" class="label-split"><span>Drop needed after a peak</span><span class="c-cream" id="set-drop-val">0.15</span></label>
+        <input id="set-drop" type="range" min="0.05" max="0.3" step="0.01">
       </div>
-      <label class="check">
-        <input type="checkbox" id="set-hand">
-        <span>Require hand near mouth before a bite counts <span class="check-sub">(cuts false hits from talking and laughing)</span></span>
-      </label>
+      <div class="field" id="field-close">
+        <label for="set-close" class="label-split"><span>Close line</span><span class="c-cream" id="set-close-val">0.20</span></label>
+        <input id="set-close" type="range" min="0.1" max="0.35" step="0.01">
+      </div>
+      <div class="field">
+        <label for="set-window" class="label-split"><span>Bite window</span><span class="c-cream" id="set-window-val">1.2 s</span></label>
+        <input id="set-window" type="range" min="0.8" max="2.5" step="0.1">
+      </div>
 
       <div class="log-wrap">
         <div class="log-title">Test log</div>
@@ -271,23 +299,29 @@
       <dl class="hotkeys">
         <dt>Enter</dt><dd>Start / next</dd>
         <dt>Space</dt><dd>Count it</dd>
-        <dt>X</dt><dd>Not a puri</dd>
+        <dt>X</dt><dd>Not a puri / undo (Auto)</dd>
         <dt>+ / −</dt><dd>Manual adjust</dd>
         <dt>P</dt><dd>Pause</dd>
         <dt>Esc</dt><dd>End round / back</dd>
-        <dt>F</dt><dd>Fullscreen on TV</dd>
-        <dt>S</dt><dd>This page (Esc first if typing a name)</dd>
+        <dt>F</dt><dd>Enter / exit fullscreen</dd>
+        <dt>S</dt><dd>This page (Esc first if typing)</dd>
+        <dt>⌘/Ctrl Z</dt><dd>Undo discard / re-run</dd>
       </dl>
     </section>
   </div>
 
   <footer class="setup-foot">
-    <span class="setup-note" id="setup-note">Changes apply instantly. No video leaves this laptop; nothing is recorded.</span>
-    <button type="button" class="btn btn-gold" id="btn-save">Save settings</button>
+    <span class="setup-note">Changes apply instantly. No video leaves this laptop; nothing is recorded.</span>
+    <button type="button" class="btn btn-gold" id="btn-save">Done (Esc)</button>
   </footer>
 </main>
 
-<div class="toast" id="toast" role="status" hidden></div>
+<div class="other-tab" id="other-tab" role="alert" hidden>
+  <h1 class="other-tab-title">Already open in another tab</h1>
+  <p class="other-tab-text">Use the other tab or window, and close this one so the scoreboard isn't overwritten.</p>
+</div>
+<div class="toast notice" id="notice" role="alert" hidden></div>
+<div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button type="button" class="toast-action" id="toast-action" hidden>Undo</button></div>
 </div>
 
 <dialog id="score-dialog" class="dialog" aria-labelledby="score-dialog-title">
@@ -299,13 +333,14 @@
     </div>
     <div class="field">
       <label for="score-value">Puris</label>
-      <input id="score-value" type="number" min="0" max="200" step="1">
+      <input id="score-value" type="number" min="0" max="200" step="1" required>
     </div>
     <div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="score-delete">Remove entry</button>
       <span class="spacer"></span>
-      <button value="cancel" class="btn btn-outline" formnovalidate>Cancel</button>
+      <!-- Save comes first so Enter in the score field submits it (a form's default button is its first submit button). -->
       <button value="save" class="btn btn-gold" id="score-save">Save</button>
+      <button value="cancel" class="btn btn-outline" formnovalidate>Cancel</button>
     </div>
   </form>
 </dialog>
