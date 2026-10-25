@@ -320,3 +320,16 @@ describe('bite timing at GO and at 0:00', () => {
     expect(R.candidate(live, bite(65000, 62900), 'auto', 65000).count).toBe(0); // past the detect window
   });
 });
+
+// Value: protects=after a pause, a bite that opened after GO still counts (GO is armingEndsAt, which pauses don't move);
+//   fails_when=GO is derived from endsAt, which shifts with each pause; why_new=GO tests never paused; seam=none;
+//   no_claim=none beyond protects
+describe('GO stays put through a pause', () => {
+  it('accepts a bite opened after GO but before a long pause, arriving after resume', () => {
+    let s = liveAt(0); // GO 3000
+    s = R.togglePause(s, 10500);
+    s = R.togglePause(s, 30500); // 20 s pause
+    expect(R.candidate(s, bite(30600, 10000), 'auto', 30600).count).toBe(1);
+    expect(R.candidate(s, bite(30600, 2900), 'auto', 30600).count).toBe(0); // still: before GO
+  });
+});

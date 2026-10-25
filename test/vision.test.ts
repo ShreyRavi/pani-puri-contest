@@ -133,6 +133,17 @@ describe('pickFace distance gate (review fix)', () => {
     expect(r.index).toBe(1);
   });
 
+  // Value: protects=a hand over the face while eating (past the reset window) does not count as a new contestant;
+  //   fails_when=every re-acquire after a reset is flagged as a switch (which resets the detector's held bite);
+  //   why_new=only a far re-acquire was tested; seam=none; no_claim=real occlusion lengths
+  it('the same face coming back after the reset window is not a switch', () => {
+    let r = pickFace([contestant()], null);
+    for (let i = 0; i < 15; i++) r = pickFace([], r.state);
+    expect(r.state.mouth).toBeNull();
+    r = pickFace([contestant(325)], r.state);
+    expect(r).toMatchObject({ index: 0, switched: false });
+  });
+
   it('re-acquires the widest face after the reset window and flags the switch', () => {
     let r = pickFace([contestant()], null);
     for (let i = 0; i < 15; i++) r = pickFace([bystander], r.state);

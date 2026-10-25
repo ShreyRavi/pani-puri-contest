@@ -57,8 +57,10 @@ export function toast(message: string, action?: ToastAction): void {
   showToast(message, action);
 }
 
-/** Replace whatever toast is up, an Undo included (its own result, e.g. "restored"). A queued message still follows. */
+/** Replace whatever toast is up, an Undo included, with its result ("restored"). Anything queued behind the Undo
+ * described the state the undo just reversed, so it is dropped. */
 export function toastNow(message: string): void {
+  queued = null;
   showToast(message);
 }
 

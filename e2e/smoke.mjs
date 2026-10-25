@@ -42,6 +42,11 @@ async function expectVisible(page, sel, visible = true) {
   await page.waitForSelector(sel, { state: visible ? 'visible' : 'hidden', timeout: 4000 });
 }
 
+/** The app boots once it holds the tab lock; until then the stage is inert and no hotkeys listen. */
+async function booted(p) {
+  await p.waitForFunction(() => document.getElementById('view-idle')?.inert === false, null, { timeout: 10000 });
+}
+
 async function check(name, fn) {
   try {
     await fn();
@@ -79,11 +84,13 @@ try {
       if (s) localStorage.setItem('ppc.settings.v1', JSON.stringify(s));
     }, [round, settings]);
     await page.reload();
+    await booted(page);
     await page.waitForSelector('#view-live:not([hidden]), #view-idle:not([hidden]), #view-result:not([hidden])');
   };
 
   const first = await page.goto(URL);
   await page.waitForSelector('#view-idle:not([hidden])');
+  await booted(page);
   await check('serves the Content-Security-Policy that keeps frames on the laptop', async () => {
     const csp = first.headers()['content-security-policy'] ?? '';
     assert.match(csp, /connect-src 'self'/);
@@ -121,6 +128,7 @@ try {
     const now = await page.evaluate(() => Date.now());
     await seed({ ...IDLE, phase: 'live', name: 'Ravi', count: 6, endsAt: now + 40000, savedAt: now });
     await page.reload();
+    await booted(page);
     await page.waitForSelector('#view-live:not([hidden])');
     await expectText(page, '#live-count', '6');
   });
@@ -274,6 +282,8 @@ try {
     const now = await page.evaluate(() => Date.now());
     await seed({ ...IDLE, phase: 'live', name: 'Late', count: 4, endsAt: now - 60000, savedAt: now - 65000 });
     await expectVisible(page, '#view-idle');
+    // Saved on the first frame after boot.
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('ppc.results.v1') || '[]').some((r) => r.name === 'Late'), null, { timeout: 5000 });
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('ppc.results.v1')).filter((r) => r.name === 'Late').map((r) => r.score));
     assert.deepEqual(saved, [4]);
     await expectText(page, '#notice', /Late's round ended while the screen was away: 4 puris saved/);
@@ -459,6 +469,7 @@ try {
   await check('a later toast does not cancel a Discard undo', async () => {
     await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
     await page.reload();
+    await booted(page);
     await expectVisible(page, '#view-idle');
     await playRound('Nila', 1);
     await page.click('#btn-discard'); // the board is empty again
@@ -476,8 +487,43 @@ try {
     await expectVisible(page, '#view-result');
     assert.deepEqual(await board('Nila'), [1]);
     await expectText(page, '#toast-text', "Nila's score restored");
-    await expectText(page, '#toast-text', 'Board is already empty', 5000); // the queued message follows the undo
+    // The queued "Board is already empty" described the state the undo reversed: it must not follow.
+    await page.waitForSelector('#toast', { state: 'hidden', timeout: 5000 });
+    await page.waitForTimeout(500); // gstack-timing-ok: negative check, a wrongful follow-up toast gets time to show
+    assert.ok(await page.isHidden('#toast'), 'a stale queued toast followed the undo');
     await backToIdle();
+  });
+
+  // Value: protects=starting the next round drops a toast still queued behind a Discard undo (it is stale by then), and
+  //   − at 0 on the result screen changes nothing (no "Adjusted" chip); fails_when=hideToast flushes the queue again, or
+  //   fixScore marks a no-op as adjusted; why_new=neither path was driven; seam=none; no_claim=camera toasts
+  await check('a new round drops a stale queued toast; − at 0 is not an adjustment', async () => {
+    await playRound('Zero', 0);
+    await page.keyboard.press('-');
+    await page.waitForTimeout(200); // gstack-timing-ok: negative check, a wrongful chip gets a few frames
+    assert.ok(await page.isHidden('#res-adjusted'), '"Adjusted by referee" shown for an unchanged score');
+    await backToIdle(); // a reload from the result screen would restore the result
+    await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
+    await page.reload();
+    await booted(page);
+    await expectVisible(page, '#view-idle');
+    await playRound('Olu', 1);
+    await page.click('#btn-discard'); // board empty again
+    await expectVisible(page, '#view-idle');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('s');
+    await expectVisible(page, '#view-setup');
+    await page.click('#btn-clear'); // "Board is already empty" queues behind the Undo
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-idle');
+    await page.fill('#name-input', 'Next');
+    await page.keyboard.press('Enter');
+    await expectVisible(page, '#arming');
+    await page.waitForTimeout(2600); // gstack-timing-ok: longer than a plain toast lasts; nothing may show
+    assert.ok(await page.isHidden('#toast'), 'a stale queued toast appeared over the countdown');
+    await page.keyboard.press('Escape'); // cancel the countdown
+    await expectVisible(page, '#view-idle');
+    await page.fill('#name-input', '');
   });
 
   await check('a Re-run undo survives a later toast during the countdown', async () => {
@@ -501,6 +547,7 @@ try {
     const tens = Array.from({ length: 10 }, (_, i) => ({ id: `seed-${i}`, name: `Seed${i}`, score: 5, rejected: 0, notCounted: 0, seconds: 60, at: 1000 + i }));
     await page.evaluate((list) => localStorage.setItem('ppc.results.v1', JSON.stringify(list)), tens);
     await page.reload();
+    await booted(page);
     await playRound('Pia', 2);
     await expectText(page, '#res-rank', '4 more would have made the board');
     await page.click('#btn-fix');
@@ -519,6 +566,7 @@ try {
     assert.deepEqual(await board('Pia'), []);
     await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
     await page.reload();
+    await booted(page);
     await expectVisible(page, '#view-idle');
   });
 
@@ -551,6 +599,7 @@ try {
     });
     await p2.bringToFront(); // background pages get throttled animation frames
     await p2.goto(URL);
+    await booted(p2);
     await p2.fill('#name-input', 'Meera');
     await p2.keyboard.press('Enter');
     await expectVisible(p2, '#arming');
@@ -640,12 +689,14 @@ try {
   await page.evaluate(() => localStorage.setItem('ppc.round.v1', JSON.stringify({ phase: 'idle' })));
   await check('offline: page, fonts and models load with the server stopped', async () => {
     await page.reload();
+    await booted(page);
     await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30000 });
     // The model files are large; wait until the install finished precaching them.
     await page.waitForFunction(async () => (await caches.keys()).some((k) => k.startsWith('ppc-models-')) && (await navigator.serviceWorker.ready).active?.state === 'activated', null, { timeout: 60000 });
     server.kill();
     await waitFor(async () => !(await fetch(URL).catch(() => null)), 'server to stop');
     await page.reload();
+    await booted(page);
     await page.waitForSelector('#view-idle:not([hidden])');
     await page.waitForFunction(() => document.querySelector('#view-idle [data-cam-text]')?.textContent !== 'Loading face model…' && document.querySelector('#view-idle [data-cam-text]')?.textContent !== 'Starting camera…', null, { timeout: 30000 });
     const status = await text('#view-idle [data-cam-text]');

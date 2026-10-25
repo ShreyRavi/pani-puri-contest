@@ -294,7 +294,7 @@ function doUndo(): void {
   restoreResult(u.result);
   commit({ ...u.round, resultAt: Date.now() });
   renderBoards();
-  toastNow(`${u.result.name}'s score restored`); // replaces the Undo toast; anything queued behind it follows
+  toastNow(`${u.result.name}'s score restored`); // replaces the Undo toast and drops what queued behind it
 }
 
 function rerun(): void {
@@ -321,6 +321,7 @@ function fixScore(delta: number): void {
   const r = getRound();
   if (!r.resultId) return;
   const fixed = { ...R.adjust(r, delta, Date.now()), resultAt: Date.now() };
+  if (fixed.count === r.count) return; // − at 0: nothing changed, so no "Adjusted" chip
   updateResult(r.resultId, { score: fixed.count });
   adjusted.add(r.resultId);
   commit(fixed);

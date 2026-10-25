@@ -23,6 +23,8 @@ export interface PickState {
   wider: number;
   /** consecutive frames without the tracked face */
   missing: number;
+  /** where the tracked face was last seen, kept through a reset so the same face coming back is not a switch */
+  lastSeen?: { mouth: PickPoint; width: number } | null;
 }
 
 export interface PickResult {
@@ -45,9 +47,12 @@ export function pickFace(faces: PickFace[], prev: PickState | null): PickResult 
   for (let i = 0; i < faces.length; i++) if (widest < 0 || faces[i].width > faces[widest].width) widest = i;
 
   if (!last) {
-    if (widest < 0) return { index: null, state: { mouth: null, width: 0, wider: 0, missing: (prev?.missing ?? 0) + 1 }, switched: false };
-    // Nothing tracked: lock onto the closest (widest) face. After a reset that is a new person.
-    return chosen(faces, widest, 0, prev !== null);
+    if (widest < 0) return { index: null, state: { mouth: null, width: 0, wider: 0, missing: (prev?.missing ?? 0) + 1, lastSeen: prev?.lastSeen ?? null }, switched: false };
+    // Nothing tracked: lock onto the closest (widest) face. After a reset it is a new person unless it is
+    // where the old one was (a hand over the face while eating is not a new contestant).
+    const seen = prev?.lastSeen;
+    const same = !!seen && Math.hypot(faces[widest].mouth.x - seen.mouth.x, faces[widest].mouth.y - seen.mouth.y) <= MAX_JUMP * seen.width;
+    return chosen(faces, widest, 0, prev !== null && !same);
   }
 
   let nearest = -1;
@@ -67,7 +72,13 @@ export function pickFace(faces: PickFace[], prev: PickState | null): PickResult 
     const reset = missing >= RESET_FRAMES;
     return {
       index: null,
-      state: { mouth: reset ? null : last, width: reset ? 0 : prev?.width ?? 0, wider: 0, missing },
+      state: {
+        mouth: reset ? null : last,
+        width: reset ? 0 : prev?.width ?? 0,
+        wider: 0,
+        missing,
+        lastSeen: reset ? { mouth: last, width: prev?.width || faces[nearest]?.width || 0 } : null,
+      },
       switched: false,
     };
   }

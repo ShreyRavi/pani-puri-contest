@@ -167,7 +167,7 @@ function step(s: RoundState, now: number): RoundState {
 export function accepts(s: RoundState, openedAt: number, now: number): boolean {
   if (s.phase === 'live') {
     // A mouth that opened during the 3-2-1 is not a bite of this round.
-    if (openedAt < s.endsAt - s.durationMs) return false;
+    if (openedAt < s.armingEndsAt) return false; // GO; endsAt moves with pauses, armingEndsAt does not
     // Past 0:00 but not yet ticked to the buzzer (the frame loop hasn't run): same rule as the buzzer.
     if (now >= s.endsAt) return openedAt < s.endsAt && now < s.endsAt + s.detectMs;
     return true;
