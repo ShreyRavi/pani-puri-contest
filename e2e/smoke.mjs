@@ -606,6 +606,23 @@ try {
     await backToIdle();
   });
 
+  // Value: protects=a cleared score field cannot overwrite a saved score with 0 (Enter is blocked, Esc keeps the score);
+  //   fails_when=the score input is not required or onclose saves an empty value as 0; why_new=Enter-to-save made a
+  //   stray Backspace+Enter a one-keystroke wipe; seam=none; no_claim=none beyond protects
+  await check('an empty score field never saves the score as 0', async () => {
+    await playRound('Empty', 3);
+    await page.click('#btn-fix');
+    await expectVisible(page, '#score-dialog');
+    await page.fill('#score-value', '');
+    await page.press('#score-value', 'Enter');
+    await expectVisible(page, '#score-dialog');
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#score-dialog', false);
+    await expectText(page, '#res-count', '3');
+    assert.deepEqual(await board('Empty'), [3]);
+    await backToIdle();
+  });
+
   const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const p2 = await denied.newPage();
   await check('camera blocked: camera-off card, + becomes primary, named cause', async () => {

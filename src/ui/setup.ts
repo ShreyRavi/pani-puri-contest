@@ -255,7 +255,8 @@ export function openScoreDialog(id: string | null, onDone: () => void): void {
   dialog.onclose = () => {
     clearTimeout(idle);
     const r = current();
-    if (dialog.returnValue === 'save' && r) {
+    // A cleared field is not a zero: never overwrite a saved score with nothing typed.
+    if (dialog.returnValue === 'save' && r && value.value.trim() !== '') {
       const score = Math.max(0, Math.round(Number(value.value) || 0));
       updateResult(r.id, { score });
     }
