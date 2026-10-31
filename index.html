@@ -294,6 +294,7 @@
       <button type="button" class="btn btn-outline btn-block" id="btn-csv">Export CSV</button>
       <button type="button" class="btn btn-outline btn-block" id="btn-edit">Edit a score</button>
       <button type="button" class="btn btn-danger btn-block" id="btn-clear">Clear board (asks twice)</button>
+      <button type="button" class="btn btn-outline btn-block" id="btn-reset-settings">Reset settings to default</button>
 
       <h2 class="panel-h panel-h-gap">Hotkeys</h2>
       <dl class="hotkeys">
@@ -325,7 +326,7 @@
 </div>
 
 <dialog id="score-dialog" class="dialog" aria-labelledby="score-dialog-title">
-  <form method="dialog" class="dialog-form" id="score-form">
+  <form method="dialog" class="dialog-form" id="score-form" novalidate>
     <h2 id="score-dialog-title" class="panel-h">Edit a score</h2>
     <div class="field" id="score-pick-field">
       <label for="score-pick">Contestant</label>
@@ -333,7 +334,8 @@
     </div>
     <div class="field">
       <label for="score-value">Puris</label>
-      <input id="score-value" type="number" min="0" max="200" step="1" required>
+      <input id="score-value" type="number" min="0" max="200" step="1" required aria-describedby="score-error">
+      <p class="dialog-error" id="score-error" role="alert" hidden>Type a number of puris from 0 to 200</p>
     </div>
     <div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="score-delete">Remove entry</button>
@@ -341,6 +343,19 @@
       <!-- Save comes first so Enter in the score field submits it (a form's default button is its first submit button). -->
       <button value="save" class="btn btn-gold" id="score-save">Save</button>
       <button value="cancel" class="btn btn-outline" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Every yes/no question goes through this one styled dialog, never the browser's confirm(). -->
+<dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title" aria-describedby="confirm-msg">
+  <form method="dialog" class="dialog-form">
+    <h2 id="confirm-title" class="panel-h"></h2>
+    <p id="confirm-msg" class="dialog-msg"></p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button value="cancel" class="btn btn-outline" id="confirm-cancel">Cancel</button>
+      <button value="ok" class="btn btn-gold" id="confirm-ok">OK</button>
     </div>
   </form>
 </dialog>

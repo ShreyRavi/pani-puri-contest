@@ -411,6 +411,12 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .dialog-form { display: flex; flex-direction: column; gap: 18px; }
 .dialog-actions { display: flex; gap: 12px; align-items: center; }
 #score-save { order: 1; } /* first in the DOM (Enter saves), last on screen */
+/* No browser spinner arrows inside number fields: type the number, or use the arrow keys. */
+input[type='number'] { appearance: textfield; }
+input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.dialog-msg { margin: 0; font-size: 24px; line-height: 1.4; color: var(--sand); }
+.dialog-error { margin: 0; font-size: 20px; font-weight: 500; color: var(--warn-text); }
+.btn-danger-solid { background: var(--chilli-surface); color: var(--cream); padding: 0 26px; }
 .spacer { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) {

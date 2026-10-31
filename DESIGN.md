@@ -92,6 +92,7 @@ Titan One for display, Rubik (400/500/700/900) for everything else. Both are bun
 - **Overlay card:** centered in the camera box on panel color. Paused uses a 6px marigold dashed border and 80px text; camera off uses 56px text.
 - **Toast:** cream on ground-text, top 48px, optional Undo button. The sticky notice uses the same style, holds the 48px slot until a key is pressed, and pushes a toast below it.
 - **Board row:** rank, name, points. Top row marigold; your row on the result screen marigold with a cream outline; empty rows read "open" in muted.
+- **Dialog:** panel-colored card (4px panel-edge border, radius 24, 28px padding, 560px wide) over a dimmed ground backdrop. Edit a score and every yes/no question (Clear board, Remove entry, Reset settings) use it; the browser's own confirm() and validation bubbles are never shown. Buttons sit on the right with the action last: gold for a normal action, chilli-surface for a destructive one. Cancel has focus, Esc cancels, and an unanswered dialog closes as "no" after a minute. Field errors are 20px warn-text under the field.
 - **Already-open screen:** full stage on ground, 96px Titan One marigold title, 40px Rubik cream line (max 1200px). Shown when another tab holds the stall; the app beneath is inert.
 - **Meter (Setup):** marigold fill, chilli open line, chutney close line (dashed and moving with the peak in Relative mode), striped while waiting.
 
