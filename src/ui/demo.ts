@@ -81,13 +81,17 @@ export function playDemo(video: HTMLVideoElement, soundBtn: HTMLButtonElement): 
   video.onvolumechange = sync;
   video.onplay = sync;
   video.onpause = sync;
+  let active = true;
+  // Sound refused: carry on muted. Any other failure (the demo was closed mid-play, which aborts the request)
+  // must not restart a video nobody can see.
+  const playMuted = (e: unknown) => {
+    if (!active || (e as DOMException)?.name !== 'NotAllowedError') return sync();
+    video.muted = true;
+    video.play().catch(sync);
+  };
   const unmute = () => {
     video.muted = false;
-    // Chrome pauses a video unmuted without permission: put it back to muted and playing.
-    void video.play().catch(() => {
-      video.muted = true;
-      void video.play().catch(sync);
-    });
+    void video.play().catch(playMuted); // Chrome pauses a video unmuted without permission
   };
   soundBtn.onclick = unmute;
 
@@ -103,16 +107,14 @@ export function playDemo(video: HTMLVideoElement, soundBtn: HTMLButtonElement): 
   document.addEventListener('click', onGesture, true);
   document.addEventListener('keydown', onGesture, true);
   stopListening = () => {
+    active = false;
     document.removeEventListener('click', onGesture, true);
     document.removeEventListener('keydown', onGesture, true);
     stopListening = null;
   };
 
   video.muted = false;
-  video.play().catch(() => {
-    video.muted = true;
-    video.play().catch(sync);
-  });
+  video.play().catch(playMuted);
   sync();
 }
 
