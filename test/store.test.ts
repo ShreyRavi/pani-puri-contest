@@ -4,6 +4,7 @@ import {
   csvCell,
   isStale,
   normalizeResult,
+  DEFAULT_SETTINGS,
   normalizeRound,
   rankOf,
   ranked,
@@ -90,8 +91,20 @@ describe('load guard (R9, O15)', () => {
     expect(normalizeResult(legacy).id).not.toBe(normalizeResult({ ...legacy, at: 1235 }).id);
   });
 
+  it('loads a save from before Auto discount with nothing to discount and no stale undo flag', () => {
+    const s = normalizeRound({ phase: 'live', count: 3, undoable: true, endsAt: 9000, queue: [] });
+    expect(s.autoCounted).toBe(0);
+    expect('undoable' in s).toBe(false);
+  });
+
   it('fills notCounted on old results', () => {
     expect(normalizeResult({ id: 'a', name: 'A', score: 3, rejected: 1, seconds: 60, at: 1 }).notCounted).toBe(0);
+  });
+});
+
+describe('defaults', () => {
+  it('counts a detected bite straight away (Auto) unless Setup says otherwise', () => {
+    expect(DEFAULT_SETTINGS.mode).toBe('auto');
   });
 });
 
