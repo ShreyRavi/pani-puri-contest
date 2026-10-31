@@ -136,6 +136,8 @@ const views: Record<View, HTMLElement> = {
   setup: $('view-setup'),
 };
 let setupOpen = false;
+/** Edit a score or a yes/no question is up: stall hotkeys, the result timeout and auto-update all wait. */
+const anyDialogOpen = () => document.querySelector('dialog[open]') != null;
 let currentView: View | null = null;
 /** Name to put back in the field after a cancelled countdown (DD7). */
 let keepName = '';
@@ -429,7 +431,7 @@ function onKey(e: KeyboardEvent): void {
     return doUndo();
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if ($<HTMLDialogElement>('score-dialog').open) return;
+  if (anyDialogOpen()) return;
   const target = e.target as HTMLElement;
   const typing = target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'number');
   const k = e.key;
@@ -545,7 +547,7 @@ function frame(): void {
   const wasResult = getRound().phase === 'result';
   const ticked = R.tick(getRound(), now);
   if (ticked !== getRound()) commit(ticked);
-  if (R.shouldReturnToIdle(getRound(), now) && !$<HTMLDialogElement>('score-dialog').open) {
+  if (R.shouldReturnToIdle(getRound(), now) && !anyDialogOpen()) {
     const done = getRound();
     if (!wasResult) notice(`${done.name}'s round ended while the screen was away: ${plural(done.count, 'puri')} saved.`);
     commit(R.IDLE);
@@ -837,7 +839,7 @@ function updateIsBlocked(): boolean {
     {
       phase: getRound().phase,
       setupOpen,
-      dialogOpen: $<HTMLDialogElement>('score-dialog').open,
+      dialogOpen: anyDialogOpen(),
       undoUntil: undo?.until ?? null,
       name: $<HTMLInputElement>('name-input').value,
       noticeShown: !$('notice').hidden,

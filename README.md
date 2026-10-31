@@ -129,4 +129,5 @@ Don't upgrade `@mediapipe/tasks-vision` on the day of an event: the WASM and mod
 - **External webcam not used:** pick it under Setup › Camera.
 - **Status says CPU and latency is high:** in Chrome, enable *Use graphics acceleration when available* and restart Chrome.
 - **Board needs a reset for the next event:** Setup › Clear board (asks twice).
+- **Someone changed the settings and it's acting odd:** Setup › **Reset settings to default** puts round length, counting mode, sounds and detection back. The camera, event line and board are kept.
 - **Privacy is enforced by the browser:** the page's Content-Security-Policy limits network requests to its own origin and blocks form posts, so camera frames can't be sent anywhere even by mistake.

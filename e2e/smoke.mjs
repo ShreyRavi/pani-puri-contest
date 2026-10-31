@@ -74,6 +74,11 @@ try {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Every question uses the app's own dialog: a native confirm/alert/prompt is a failure.
+  page.on('dialog', (d) => {
+    errors.push(`native ${d.type()} dialog: ${d.message()}`);
+    void d.dismiss();
+  });
   // Any Content-Security-Policy violation (a blocked worker, wasm or model fetch) counts as a page error.
   await ctx.addInitScript(() => addEventListener('securitypolicyviolation', (e) => console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`)));
   page.on('console', (m) => m.type() === 'error' && m.text().startsWith('CSP violation') && errors.push(m.text()));
@@ -579,8 +584,10 @@ try {
     assert.deepEqual(await board('Pia'), [7]);
     await page.click('#btn-fix');
     await expectVisible(page, '#score-dialog');
-    page.once('dialog', (d) => d.accept());
     await page.click('#score-delete');
+    await expectVisible(page, '#confirm-dialog');
+    await expectText(page, '#confirm-title', 'Remove Pia?');
+    await page.click('#confirm-ok');
     await expectVisible(page, '#view-idle');
     assert.deepEqual(await board('Pia'), []);
     await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
@@ -635,11 +642,66 @@ try {
     await page.fill('#score-value', '');
     await page.press('#score-value', 'Enter');
     await expectVisible(page, '#score-dialog');
+    await expectVisible(page, '#score-error'); // the app's message, not the browser's bubble
+    await page.fill('#score-value', '250');
+    await expectVisible(page, '#score-error', false);
+    await page.press('#score-value', 'Enter');
+    await expectVisible(page, '#score-error');
     await page.keyboard.press('Escape');
     await expectVisible(page, '#score-dialog', false);
     await expectText(page, '#res-count', '3');
     assert.deepEqual(await board('Empty'), [3]);
     await backToIdle();
+  });
+
+  // Value: protects=Setup › Reset settings puts counting, round and detection back to defaults behind the app's own
+  //   confirm (Esc / Cancel change nothing), keeps the camera and event line, and Clear board asks twice in that same
+  //   dialog; fails_when=reset drops the event line, skips the question, or a native confirm() comes back; why_new=new
+  //   button and dialog; seam=none; no_claim=none beyond protects
+  await check('Setup: reset settings and clear board use the styled confirm', async () => {
+    await page.keyboard.press('Escape'); // leave the name field so S opens Setup
+    await page.keyboard.press('s');
+    await expectVisible(page, '#view-setup');
+    await page.fill('#set-seconds', '90');
+    await page.press('#set-seconds', 'Tab');
+    await page.check('input[name="mode"][value="manual"]');
+    await page.fill('#set-event', 'Sharma wedding');
+    await page.click('#btn-reset-settings');
+    await expectVisible(page, '#confirm-dialog');
+    await page.keyboard.press('Escape'); // Esc says no
+    await expectVisible(page, '#confirm-dialog', false);
+    await expectVisible(page, '#view-setup'); // and Esc in the dialog did not also leave Setup
+    assert.equal(await page.inputValue('#set-seconds'), '90');
+    await page.click('#btn-reset-settings');
+    await page.click('#confirm-ok');
+    await expectText(page, '#toast-text', 'Settings reset to default');
+    assert.equal(await page.inputValue('#set-seconds'), '60');
+    assert.ok(await page.isChecked('input[name="mode"][value="auto"]'), 'mode did not go back to Auto');
+    assert.equal(await page.inputValue('#set-event'), 'Sharma wedding');
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('ppc.settings.v1')));
+    assert.equal(saved.roundSeconds, 60);
+    assert.equal(saved.eventLine, 'Sharma wedding');
+
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-idle');
+    await playRound('Zoya', 2);
+    await backToIdle();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('s');
+    await expectVisible(page, '#view-setup');
+    await page.click('#btn-clear');
+    await expectText(page, '#confirm-title', 'Clear the whole board?');
+    await page.click('#confirm-cancel');
+    assert.deepEqual(await board('Zoya'), [2]);
+    await page.click('#btn-clear');
+    await page.click('#confirm-ok');
+    await expectText(page, '#confirm-title', 'Really clear it?');
+    await page.click('#confirm-ok');
+    await expectText(page, '#toast-text', 'Board cleared');
+    assert.deepEqual(await board('Zoya'), []);
+    await page.evaluate(() => localStorage.setItem('ppc.settings.v1', JSON.stringify({ eventLine: 'Stall No. 7 · Carnival Corner' })));
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-idle');
   });
 
   const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });

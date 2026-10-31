@@ -1,7 +1,7 @@
 // Setup + calibration screen (operator only).
 
 import type { BiteDetector, DetectorEvent, DetectorMode } from '../detector';
-import { allResults, clearResults, ranked, removeResult, resultsCsv, saveSettings, settings, updateResult, type Settings } from '../store';
+import { allResults, clearResults, DEFAULT_SETTINGS, ranked, removeResult, resultsCsv, saveSettings, settings, updateResult, type Settings } from '../store';
 import type { CountMode } from '../round';
 import type { Vision } from '../vision/client';
 import type { VisionResult } from '../vision/protocol';
@@ -95,13 +95,27 @@ export function initSetup(deps: SetupDeps) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
-  $('btn-clear').addEventListener('click', () => {
+  $('btn-clear').addEventListener('click', async () => {
     if (!allResults().length) return toast('Board is already empty');
-    if (!confirm('Clear the whole leaderboard?')) return;
-    if (!confirm('Really clear it? This cannot be undone.')) return;
+    const n = allResults().length;
+    if (!(await ask({ title: 'Clear the whole board?', message: `${n === 1 ? 'The only score' : `All ${n} scores`} will be removed. Export CSV first if you want a copy.`, ok: 'Clear board', danger: true }))) return;
+    if (!(await ask({ title: 'Really clear it?', message: 'This cannot be undone.', ok: 'Yes, clear everything', danger: true }))) return;
     clearResults();
     deps.onBoardChanged();
     toast('Board cleared');
+  });
+
+  // Undo a messed-up Setup: everything back to the defaults except the camera choice and the event line.
+  $('btn-reset-settings').addEventListener('click', async () => {
+    const ok = await ask({
+      title: 'Reset settings to default?',
+      message: 'Round length, counting mode, sounds and detection go back to their defaults. The camera, event line and board stay as they are.',
+      ok: 'Reset settings',
+    });
+    if (!ok) return;
+    const { cameraId: _cam, eventLine: _line, ...defaults } = DEFAULT_SETTINGS;
+    change(defaults);
+    toast('Settings reset to default');
   });
 
   $('btn-edit').addEventListener('click', () => {
@@ -236,9 +250,24 @@ export function openScoreDialog(id: string | null, onDone: () => void): void {
   pick.onchange = sync;
   sync();
 
-  $('score-delete').onclick = () => {
+  const error = $('score-error');
+  show(error, false);
+  // The form is `novalidate`: a bad value shows our own message instead of the browser's bubble.
+  $<HTMLFormElement>('score-form').onsubmit = (e) => {
+    if ((e.submitter as HTMLButtonElement | null)?.value !== 'save') return;
+    const v = value.value.trim();
+    const n = Number(v);
+    if (v === '' || !Number.isFinite(n) || n < 0 || n > 200) {
+      e.preventDefault();
+      show(error, true);
+      value.focus();
+    }
+  };
+  value.oninput = () => show(error, false);
+
+  $('score-delete').onclick = async () => {
     const r = current();
-    if (r && confirm(`Remove ${r.name} (${r.score}) from the board?`)) {
+    if (r && (await ask({ title: `Remove ${r.name}?`, message: `${r.name}'s ${plural(r.score, 'puri')} will come off the board.`, ok: 'Remove entry', danger: true }))) {
       removeResult(r.id);
       dialog.close('deleted');
     }
@@ -266,4 +295,39 @@ export function openScoreDialog(id: string | null, onDone: () => void): void {
   dialog.showModal();
   (id == null ? pick : value).focus();
   if (id != null) value.select();
+}
+
+export interface AskOptions {
+  title: string;
+  message: string;
+  ok: string;
+  danger?: boolean;
+}
+
+/** Styled yes/no dialog in place of the browser's confirm(). Cancel has focus, so a stray Enter never says yes. */
+export function ask(o: AskOptions): Promise<boolean> {
+  const dialog = $<HTMLDialogElement>('confirm-dialog');
+  const ok = $<HTMLButtonElement>('confirm-ok');
+  text($('confirm-title'), o.title);
+  text($('confirm-msg'), o.message);
+  text(ok, o.ok);
+  ok.classList.toggle('btn-gold', !o.danger);
+  ok.classList.toggle('btn-danger-solid', !!o.danger);
+  // A forgotten question must not hold the stall either: it closes as "no" after a minute without input.
+  let idle = 0;
+  const poke = () => {
+    clearTimeout(idle);
+    idle = window.setTimeout(() => dialog.open && dialog.close(''), DIALOG_IDLE_MS);
+  };
+  dialog.onkeydown = poke;
+  poke();
+  dialog.returnValue = '';
+  dialog.showModal();
+  $('confirm-cancel').focus();
+  return new Promise((resolve) => {
+    dialog.onclose = () => {
+      clearTimeout(idle);
+      resolve(dialog.returnValue === 'ok');
+    };
+  });
 }
