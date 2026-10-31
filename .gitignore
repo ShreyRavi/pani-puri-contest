@@ -7,3 +7,4 @@ public/mediapipe
 .claude/
 .vercel
 .env*
+demo_video/

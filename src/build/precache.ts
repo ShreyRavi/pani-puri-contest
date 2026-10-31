@@ -17,12 +17,17 @@ export function normalizePath(p: string): string {
   return `./${s}`;
 }
 
+/** Media served straight from the network: the service worker neither precaches nor intercepts it (see public/sw.js). */
+export const ONLINE_ONLY_DIR = 'media/';
+
 function excluded(p: string): boolean {
   const s = p.slice(2); // drop './'
   if (s === '') return true; // './' is added explicitly
   if (s === 'sw.js') return true;
   if (s.endsWith('.map')) return true;
   if (s === 'index.html') return true; // served as './'
+  // The /demo page and its video are online-only: the stall never pre-downloads the ~12 MB video.
+  if (s === 'demo.html' || s.startsWith(ONLINE_ONLY_DIR)) return true;
   const base = s.slice(s.lastIndexOf('/') + 1);
   if (base.startsWith('.')) return true; // .DS_Store and friends
   return false;

@@ -43,6 +43,8 @@ function precacheManifest(): Plugin {
 export default defineConfig({
   plugins: [precacheManifest()],
   worker: { format: 'es' },
+  // Two pages: the stall app, and /demo (the shareable how-it-works page; vercel.json routes /demo to it).
+  build: { rollupOptions: { input: { main: 'index.html', demo: 'demo.html' } } },
   preview: { headers: SECURITY_HEADERS },
   test: { environment: 'node', include: ['test/**/*.test.ts'], exclude: ['.claude/**', 'node_modules/**', 'dist/**'] },
 });
