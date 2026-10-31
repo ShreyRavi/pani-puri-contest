@@ -1,22 +1,30 @@
 import { ranked, type Result } from '../store';
 
-const ROWS = 10;
+/** Rows the board always shows; "open" fills the gaps until this many have played. */
+export const ROWS = 10;
 
-/** Render the top-10 board. `highlightId` gets the "me" style on the result screen. */
-export function renderBoard(ol: HTMLOListElement, results: readonly Result[], highlightId: string | null = null): void {
-  const top = ranked(results).slice(0, ROWS);
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < ROWS; i++) {
-    const r = top[i];
+/**
+ * Render the whole board: #1 in `pin` (always visible), #2 down in `list` (the scrolling part).
+ * At least ROWS rows, more once more people have played. `highlightId` gets the "me" style on the
+ * result screen.
+ */
+export function renderBoard(pin: HTMLOListElement, list: HTMLOListElement, results: readonly Result[], highlightId: string | null = null): void {
+  const all = ranked(results);
+  const rows = Math.max(ROWS, all.length);
+  const row = (i: number): HTMLLIElement => {
+    const r = all[i];
     const li = document.createElement('li');
     li.className = 'board-row';
     if (!r) li.classList.add('empty');
     else if (highlightId) li.classList.toggle('me', r.id === highlightId);
     else if (i === 0) li.classList.add('top');
     li.append(cell('rank', String(i + 1)), cell('name', r ? r.name : 'open'), cell('pts', r ? String(r.score) : '–'));
-    frag.append(li);
-  }
-  ol.replaceChildren(frag);
+    return li;
+  };
+  pin.replaceChildren(row(0));
+  const frag = document.createDocumentFragment();
+  for (let i = 1; i < rows; i++) frag.append(row(i));
+  list.replaceChildren(frag);
 }
 
 function cell(cls: string, value: string): HTMLSpanElement {

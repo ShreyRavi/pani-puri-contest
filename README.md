@@ -2,7 +2,7 @@
 
 A single-page app for a live pani puri eating contest at a wedding stall. One laptop, mirrored over HDMI to a 1920×1080 TV, runs the crowd display, the 60-second timer, the counting and the leaderboard.
 
-- **Solo time trials:** most puris in the round wins. The board shows the top 10, and every round is kept on the laptop.
+- **Solo time trials:** most puris in the round wins. The board lists everyone, and every round is kept on the laptop. Past 10 contestants, #1 stays pinned and the rest scroll slowly by themselves (hold on the top, glide down, glide back up). The host can scroll the board with the trackpad; it carries on by itself after 15 s untouched. The result screen first shows the contestant's own row, even at #15.
 - **Auto counting:** the webcam adds **+1** the moment it spots a bite, and the referee presses **X** (Discount) to take back one it got wrong, once per bad bite. Manual **+ / −** always works. Setup can switch to Hybrid (the referee confirms each bite with **Space**) or Manual.
 - **Private:** no video leaves the laptop and nothing is recorded. Frames go only to an in-page Web Worker.
 - **Offline:** MediaPipe models, WASM and fonts are bundled. After one load the service worker serves everything, so venue wifi doesn't matter.

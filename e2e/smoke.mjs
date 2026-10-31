@@ -573,7 +573,7 @@ try {
     await page.reload();
     await booted(page);
     await playRound('Pia', 2);
-    await expectText(page, '#res-rank', '4 more would have made the board');
+    await expectText(page, '#res-rank', '4 more would have made the top 10');
     await page.click('#btn-fix');
     await expectVisible(page, '#score-dialog');
     await page.fill('#score-value', '7');
@@ -702,6 +702,42 @@ try {
     await page.evaluate(() => localStorage.setItem('ppc.settings.v1', JSON.stringify({ eventLine: 'Stall No. 7 · Carnival Corner' })));
     await page.keyboard.press('Escape');
     await expectVisible(page, '#view-idle');
+  });
+
+  // Value: protects=with more than 10 contestants the board lists everyone with #1 pinned, the host's trackpad scroll
+  //   is not fought by the passive scroll, and the result screen brings a #15 contestant's row into view; fails_when=the
+  //   board slices to 10 again, the wheel pause is lost, or the result focus breaks; why_new=new behaviour; seam=seeded
+  //   results; no_claim=the 8 s hold and glide timings (unit tests)
+  await check('board over 10: everyone listed, #1 pinned, trackpad scroll sticks, result shows a #15 row', async () => {
+    const now = await page.evaluate(() => Date.now());
+    const results = Array.from({ length: 15 }, (_, i) => ({ id: `big${i + 1}`, name: `Guest ${i + 1}`, score: 40 - i, rejected: 0, notCounted: 0, seconds: 60, at: now - 100000 + i }));
+    await page.evaluate((r) => localStorage.setItem('ppc.results.v1', JSON.stringify(r)), results);
+    await seed({ ...IDLE });
+    await expectText(page, '#idle-board-sub', 'All 15');
+    assert.equal(await page.textContent('#idle-board-pin .name'), 'Guest 1');
+    assert.equal(await page.locator('#idle-board .board-row').count(), 14);
+    const box = await page.locator('#idle-board-scroll').boundingBox();
+    assert.ok(await page.evaluate(() => { const el = document.getElementById('idle-board-scroll'); return el.scrollHeight > el.clientHeight; }), 'board does not overflow');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 300);
+    await page.waitForFunction(() => document.getElementById('idle-board-scroll').scrollTop > 100);
+    // gstack-timing-ok: a negative check (the passive scroll must NOT snap back to the top while the host is scrolling).
+    await page.waitForTimeout(1000);
+    assert.ok((await page.evaluate(() => document.getElementById('idle-board-scroll').scrollTop)) > 100, 'passive scroll undid the host scroll');
+
+    await seed({ ...IDLE, phase: 'result', name: 'Guest 15', count: 26, durationMs: 60000, resultId: 'big15', resultAt: now, endsAt: now - 2000, savedAt: now });
+    await expectVisible(page, '#view-result');
+    await page.waitForFunction(() => {
+      const me = document.querySelector('#res-board .board-row.me');
+      const sc = document.getElementById('res-board-scroll');
+      if (!me) return false;
+      const a = me.getBoundingClientRect();
+      const b = sc.getBoundingClientRect();
+      return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+    }, null, { timeout: 6000 });
+    assert.equal(await page.textContent('#res-board .board-row.me .rank'), '15');
+    await page.evaluate(() => localStorage.setItem('ppc.results.v1', '[]'));
+    await seed({ ...IDLE });
   });
 
   const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });

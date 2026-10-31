@@ -24,7 +24,8 @@ import {
   type Result,
   type Settings,
 } from './store';
-import { chaseLine, renderBoard } from './ui/board';
+import { AutoScroll } from './ui/autoscroll';
+import { chaseLine, renderBoard, ROWS } from './ui/board';
 import { $, clock, hideToast, notice, plural, show, text, toast, toastActionShowing, toastNow } from './ui/dom';
 import { updateBlocked } from './update';
 import { CameraStage } from './ui/overlay';
@@ -185,10 +186,22 @@ function syncResultToBoard(): void {
   renderBoards();
 }
 
+const idleScroll = new AutoScroll($('idle-board-scroll'));
+const resScroll = new AutoScroll($('res-board-scroll'));
+/** The result whose row the result board last scrolled to. */
+let focusedResultId: string | null = null;
+
 function renderBoards(): void {
   const results = allResults();
-  renderBoard($<HTMLOListElement>('idle-board'), results);
-  renderBoard($<HTMLOListElement>('res-board'), results, getRound().resultId);
+  renderBoard($<HTMLOListElement>('idle-board-pin'), $<HTMLOListElement>('idle-board'), results);
+  text($('idle-board-sub'), results.length > ROWS ? `All ${results.length}` : `Top ${ROWS}`);
+  const resultId = getRound().resultId;
+  renderBoard($<HTMLOListElement>('res-board-pin'), $<HTMLOListElement>('res-board'), results, resultId);
+  // A new result: show the contestant's own row first, even at #14, then carry on scrolling.
+  if (resultId !== focusedResultId) {
+    focusedResultId = resultId;
+    if (resultId) resScroll.focus();
+  }
 }
 
 // ---------- round actions ----------
@@ -556,6 +569,9 @@ function frame(): void {
 
   const view = viewFor(r);
   showView(view);
+  const t = performance.now();
+  idleScroll.tick(t);
+  resScroll.tick(t);
   stage.draw(cameraOff() ? null : latest);
   renderCamStatus(view);
 
@@ -735,7 +751,7 @@ function renderResult(r: R.RoundState, now: number): void {
   else if (rank > 0 && rank <= 10) pill = `New #${rank} on the board`;
   else {
     const k = r.resultId ? shortOfBoard(r.count, r.resultId) : 0;
-    pill = k > 0 ? `${k} more would have made the board` : `#${rank} tonight`;
+    pill = k > 0 ? `${k} more would have made the top ${ROWS}` : `#${rank} tonight`;
     trophy = false;
   }
   text($('res-rank'), pill);
