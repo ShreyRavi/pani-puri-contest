@@ -1,0 +1,10 @@
+# Same as .gitignore: the CLI uploads the folder, so the raw 4K recording must stay on this laptop.
+node_modules
+dist
+public/mediapipe
+.gstack
+.DS_Store
+.claude
+.vercel
+.env*
+demo_video
