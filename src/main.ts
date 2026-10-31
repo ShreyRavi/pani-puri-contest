@@ -443,14 +443,14 @@ let afterDemo: (() => void) | null = null;
 renderSteps($<HTMLOListElement>('demo-steps'));
 
 /** `kind` is what boot opened it for ('small' adds the laptop notice); null when the ? button asked. */
-function openDemo(kind: BootDemo, withSound: boolean): void {
+function openDemo(kind: BootDemo): void {
   if (demoDialog.open) return;
   demoKind = kind;
   show($('demo-small'), kind === 'small');
   text($('demo-close'), kind === 'small' ? 'Continue anyway' : "Let's play");
   demoDialog.showModal();
   demoDialog.scrollTop = 0; // autofocus on the button must not scroll the laptop notice out of view on a phone
-  playDemo(demoVideo, $<HTMLButtonElement>('demo-sound'), withSound);
+  playDemo(demoVideo, $<HTMLButtonElement>('demo-sound'));
 }
 demoDialog.addEventListener('close', () => {
   stopDemo(demoVideo);
@@ -466,7 +466,7 @@ demoDialog.addEventListener('close', () => {
 });
 $('demo-close').addEventListener('click', () => demoDialog.close());
 $('demo-x').addEventListener('click', () => demoDialog.close());
-$('help-btn').addEventListener('click', () => openDemo(null, true));
+$('help-btn').addEventListener('click', () => openDemo(null));
 
 // ---------- hotkeys ----------
 function onKey(e: KeyboardEvent): void {
@@ -494,7 +494,7 @@ function onKey(e: KeyboardEvent): void {
 
   if (k === '?' && !typing && view !== 'live') {
     e.preventDefault();
-    return openDemo(null, true);
+    return openDemo(null);
   }
 
   if (k === 'f' || k === 'F') {
@@ -865,7 +865,7 @@ function boot(): void {
   const demo = bootDemo(storage, matchMedia(SMALL_SCREEN_QUERY).matches, R.isInRound(getRound()));
   if (demo) {
     afterDemo = () => void vision.start(settings.cameraId);
-    openDemo(demo, false);
+    openDemo(demo);
   } else {
     void vision.start(settings.cameraId);
   }
