@@ -124,6 +124,10 @@ try {
       assert.equal(await fp.textContent('#demo-close'), "Let's play");
       assert.equal(await fp.locator('#demo-steps li').count(), 4);
       await fp.waitForFunction(() => !document.getElementById('demo-video').paused, null, { timeout: 4000 });
+      // Nobody has clicked yet, so the browser only allows it muted; the first tap anywhere turns the sound on.
+      assert.ok(await fp.evaluate(() => document.getElementById('demo-video').muted), 'played with sound before any gesture');
+      await fp.click('#demo-steps');
+      await fp.waitForFunction(() => { const v = document.getElementById('demo-video'); return !v.muted && !v.paused; }, null, { timeout: 4000 });
       await expectText(fp, '#view-idle [data-cam-text]', 'Starting camera…'); // camera not started behind the video
       await fp.keyboard.press('Escape');
       await fp.waitForSelector('#demo-dialog:not([open])', { state: 'attached' });
@@ -170,6 +174,8 @@ try {
     await page.waitForSelector('#demo-dialog:not([open])', { state: 'attached' });
     await page.click('#help-btn');
     await page.waitForSelector('#demo-dialog[open]');
+    // Opened with a click: plays with sound straight away.
+    await page.waitForFunction(() => { const v = document.getElementById('demo-video'); return !v.muted && !v.paused; }, null, { timeout: 4000 });
     await page.click('#demo-close');
     // Enter must start a round, not reopen the demo from the ? button.
     await page.waitForFunction(() => document.activeElement?.id === 'name-input', null, { timeout: 4000 });

@@ -67,22 +67,49 @@ export function renderSteps(list: HTMLOListElement): void {
   );
 }
 
+/** Removes the "first tap turns the sound on" listeners of the video playing now. */
+let stopListening: (() => void) | null = null;
+
 /**
- * Autoplay. Browsers only allow sound after the viewer has clicked or pressed something, so sound is tried
- * when `withSound` (opened from the ? button) and the video falls back to muted, with "Tap for sound" shown.
+ * Autoplay, with sound whenever the browser allows it. Browsers only allow sound once the viewer has clicked or
+ * pressed something (Chrome also allows it on sites a browser visits often), so it tries with sound first and
+ * falls back to muted with "Tap for sound" shown. Then the viewer's first tap or key press anywhere turns the
+ * sound on, so nobody has to find the button.
  */
-export function playDemo(video: HTMLVideoElement, soundBtn: HTMLButtonElement, withSound: boolean): void {
+export function playDemo(video: HTMLVideoElement, soundBtn: HTMLButtonElement): void {
   const sync = () => (soundBtn.hidden = !video.muted || video.paused);
   video.onvolumechange = sync;
   video.onplay = sync;
   video.onpause = sync;
-  soundBtn.onclick = () => {
+  const unmute = () => {
     video.muted = false;
-    void video.play().catch(() => {});
+    // Chrome pauses a video unmuted without permission: put it back to muted and playing.
+    void video.play().catch(() => {
+      video.muted = true;
+      void video.play().catch(sync);
+    });
   };
-  video.muted = !withSound;
+  soundBtn.onclick = unmute;
+
+  stopListening?.();
+  const onGesture = (e: Event) => {
+    if (!video.muted || video.paused) return;
+    // The video's own controls (its mute button, play/pause) keep working exactly as the viewer pressed them.
+    if (e.target === video) return;
+    // Esc and modifier keys don't count as permission for sound: wait for a real tap or key.
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    unmute();
+  };
+  document.addEventListener('click', onGesture, true);
+  document.addEventListener('keydown', onGesture, true);
+  stopListening = () => {
+    document.removeEventListener('click', onGesture, true);
+    document.removeEventListener('keydown', onGesture, true);
+    stopListening = null;
+  };
+
+  video.muted = false;
   video.play().catch(() => {
-    if (video.muted) return sync();
     video.muted = true;
     video.play().catch(sync);
   });
@@ -90,6 +117,7 @@ export function playDemo(video: HTMLVideoElement, soundBtn: HTMLButtonElement, w
 }
 
 export function stopDemo(video: HTMLVideoElement): void {
+  stopListening?.();
   video.pause();
   if (video.readyState > 0) video.currentTime = 0;
 }

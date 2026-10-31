@@ -9,5 +9,5 @@ import { playDemo, renderSteps } from './ui/demo';
 import { $ } from './ui/dom';
 
 renderSteps($<HTMLOListElement>('demo-steps'));
-// Someone opened a shared link: autoplay muted (the only autoplay browsers allow), with "Tap for sound".
-playDemo($<HTMLVideoElement>('demo-video'), $<HTMLButtonElement>('demo-sound'), false);
+// Autoplays with sound where the browser allows it; otherwise muted until the first tap or key press.
+playDemo($<HTMLVideoElement>('demo-video'), $<HTMLButtonElement>('demo-sound'));
