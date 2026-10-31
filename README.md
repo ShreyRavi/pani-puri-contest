@@ -6,6 +6,7 @@ A single-page app for a live pani puri eating contest at a wedding stall. One la
 - **Auto counting:** the webcam adds **+1** the moment it spots a bite, and the referee presses **X** (Discount) to take back one it got wrong, once per bad bite. Manual **+ / −** always works. Setup can switch to Hybrid (the referee confirms each bite with **Space**) or Manual.
 - **Private:** no video leaves the laptop and nothing is recorded. Frames go only to an in-page Web Worker.
 - **Offline:** MediaPipe models, WASM and fonts are bundled. After one load the service worker serves everything, so venue wifi doesn't matter.
+- **How it works:** a first visit opens a short demo video with a four-step walkthrough; the **?** button (top right) or the **?** key brings it back on sign-up, results and Setup, never during a live round. Phones and small windows get a "made for a laptop" note with the same demo and a *Continue anyway*. The shareable version is **[panipurigame.com/demo](https://panipurigame.com/demo)**. The demo video needs internet: the service worker doesn't cache it, so the stall laptop never downloads it ahead of time.
 
 Design source: [Design canvas](https://claude.ai/code/artifact/a11882ba-97e9-4c74-ac93-0bd68c03f250). Design record: [docs/designs/pani-puri-challenge.md](docs/designs/pani-puri-challenge.md).
 
@@ -73,7 +74,7 @@ At rehearsal, have three people eat five puris each. **Go with Absolute** if the
 | Live | Auto: each bite the camera sees adds +1 straight away. Hybrid: the banner pops up (*+N more* when several wait) | **X** discount a camera bite (Auto) or not a puri (Hybrid) · **Space** count it (Hybrid) · **+ / −** manual · **P** pause · **Esc Esc** end early |
 | Time! | Score saved to the board. Returns to sign-up after 20s | **Enter** next · **+ / −** fix score |
 
-Other keys: **F** toggles fullscreen. **S** opens Setup from sign-up (press **Esc** first if the name box is focused) or from the result screen. **⌘/Ctrl Z** undoes a Discard or Re-run while its toast is showing. Holding a key down counts once.
+Other keys: **?** opens the how-it-works demo (not during a round). **F** toggles fullscreen. **S** opens Setup from sign-up (press **Esc** first if the name box is focused) or from the result screen. **⌘/Ctrl Z** undoes a Discard or Re-run while its toast is showing. Holding a key down counts once.
 
 How it behaves:
 - **Ending early:** press **Esc** twice within 2 seconds. A single stray Esc can't end someone's round.
@@ -118,6 +119,8 @@ npm run typecheck
 ```
 
 `npm run fetch-models` copies the MediaPipe WASM out of `node_modules` and downloads the two `.task` models into `public/mediapipe/`, which is gitignored. It runs automatically before `dev` and `build`, and skips models that are already there.
+
+The demo video is `public/media/pani-puri-demo.mp4`, a 1080p web encode (about 12 MB) of the original 4K recording, which stays out of git. To replace it: `ffmpeg -i original.mp4 -vf scale=1920:-2,fps=30 -c:v libx264 -preset slow -crf 25 -maxrate 1500k -bufsize 3000k -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart public/media/pani-puri-demo.mp4`. `/demo` is a second page (`demo.html`); `vercel.json` routes `/demo` to it.
 
 Don't upgrade `@mediapipe/tasks-vision` on the day of an event: the WASM and model files keep fixed names, so a laptop that loads the new deploy before its service worker updates can mix new code with the old cached WASM until the update finishes.
 

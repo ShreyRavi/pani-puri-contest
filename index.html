@@ -331,6 +331,27 @@
 <div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button type="button" class="toast-action" id="toast-action" hidden>Undo</button></div>
 </div>
 
+<!-- Help: opens the how-it-works demo. Hidden during a live round so nothing covers the contest on the TV. -->
+<button type="button" class="help-btn" id="help-btn" aria-label="How it works (?)" title="How it works (?)">?</button>
+
+<dialog id="demo-dialog" class="dialog demo-dialog" aria-labelledby="demo-title">
+  <p class="demo-small" id="demo-small" hidden><strong>Made for a laptop.</strong> Pani Puri Challenge runs on a laptop or desktop with a webcam, mirrored to a TV. Here's how it works.</p>
+  <div class="demo-head">
+    <h2 id="demo-title" class="panel-h">How it works</h2>
+    <button type="button" class="demo-x" id="demo-x" aria-label="Close">&times;</button>
+  </div>
+  <div class="demo-video-wrap">
+    <video class="demo-video" id="demo-video" src="/media/pani-puri-demo.mp4" poster="/media/pani-puri-demo.jpg" controls playsinline muted preload="none"></video>
+    <button type="button" class="demo-sound" id="demo-sound" hidden>Tap for sound</button>
+  </div>
+  <ol class="demo-steps" id="demo-steps"></ol>
+  <div class="dialog-actions">
+    <a class="demo-share" href="/demo" target="_blank" rel="noopener">Share: panipurigame.com/demo</a>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-gold" id="demo-close" autofocus>Let's play</button>
+  </div>
+</dialog>
+
 <dialog id="score-dialog" class="dialog" aria-labelledby="score-dialog-title">
   <form method="dialog" class="dialog-form" id="score-form" novalidate>
     <h2 id="score-dialog-title" class="panel-h">Edit a score</h2>

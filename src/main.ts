@@ -26,6 +26,7 @@ import {
 } from './store';
 import { AutoScroll } from './ui/autoscroll';
 import { chaseLine, renderBoard, ROWS } from './ui/board';
+import { bootDemo, playDemo, rememberDemo, renderSteps, SMALL_SCREEN_QUERY, stopDemo, type BootDemo } from './ui/demo';
 import { $, clock, hideToast, notice, plural, show, text, toast, toastActionShowing, toastNow } from './ui/dom';
 import { updateBlocked } from './update';
 import { CameraStage } from './ui/overlay';
@@ -137,7 +138,7 @@ const views: Record<View, HTMLElement> = {
   setup: $('view-setup'),
 };
 let setupOpen = false;
-/** Edit a score or a yes/no question is up: stall hotkeys, the result timeout and auto-update all wait. */
+/** A dialog is up (edit a score, a yes/no question, the demo): stall hotkeys, the result timeout and auto-update all wait. */
 const anyDialogOpen = () => document.querySelector('dialog[open]') != null;
 let currentView: View | null = null;
 /** Name to put back in the field after a cancelled countdown (DD7). */
@@ -154,6 +155,7 @@ function showView(v: View): void {
   if (v === currentView) return;
   currentView = v;
   for (const [k, el] of Object.entries(views)) show(el, k === v);
+  show($('help-btn'), v !== 'live'); // nothing covers the contest on the TV
   stage.mount(views[v].querySelector('[data-cam-slot]'));
   if (v === 'idle') {
     renderBoards();
@@ -431,6 +433,41 @@ $('btn-fix').addEventListener('click', () => {
 $('btn-back').addEventListener('click', closeSetup);
 $('btn-save').addEventListener('click', closeSetup);
 
+// ---------- how it works (demo video) ----------
+const demoDialog = $<HTMLDialogElement>('demo-dialog');
+const demoVideo = $<HTMLVideoElement>('demo-video');
+const storage = { getItem: (k: string) => localStorage.getItem(k), setItem: (k: string, v: string) => localStorage.setItem(k, v) };
+let demoKind: BootDemo = null;
+/** Runs once the demo shown at boot is closed (starts the camera, so its permission prompt doesn't cover the video). */
+let afterDemo: (() => void) | null = null;
+renderSteps($<HTMLOListElement>('demo-steps'));
+
+/** `kind` is what boot opened it for ('small' adds the laptop notice); null when the ? button asked. */
+function openDemo(kind: BootDemo, withSound: boolean): void {
+  if (demoDialog.open) return;
+  demoKind = kind;
+  show($('demo-small'), kind === 'small');
+  text($('demo-close'), kind === 'small' ? 'Continue anyway' : "Let's play");
+  demoDialog.showModal();
+  demoDialog.scrollTop = 0; // autofocus on the button must not scroll the laptop notice out of view on a phone
+  playDemo(demoVideo, $<HTMLButtonElement>('demo-sound'), withSound);
+}
+demoDialog.addEventListener('close', () => {
+  stopDemo(demoVideo);
+  rememberDemo(storage, demoKind);
+  demoKind = null;
+  // Focus goes back where the screen wants it, not to the ? button (Enter there would reopen the demo).
+  if (currentView === 'idle') $<HTMLInputElement>('name-input').focus();
+  else if (currentView === 'result') $<HTMLButtonElement>('btn-next').focus();
+  else if (currentView === 'setup') $<HTMLButtonElement>('btn-back').focus();
+  const then = afterDemo;
+  afterDemo = null;
+  then?.();
+});
+$('demo-close').addEventListener('click', () => demoDialog.close());
+$('demo-x').addEventListener('click', () => demoDialog.close());
+$('help-btn').addEventListener('click', () => openDemo(null, true));
+
 // ---------- hotkeys ----------
 function onKey(e: KeyboardEvent): void {
   // The sticky notice goes away on any key, and the key still does its normal job (O22).
@@ -453,6 +490,11 @@ function onKey(e: KeyboardEvent): void {
   if (e.repeat && !typing) {
     if (k === ' ') e.preventDefault();
     return;
+  }
+
+  if (k === '?' && !typing && view !== 'live') {
+    e.preventDefault();
+    return openDemo(null, true);
   }
 
   if (k === 'f' || k === 'F') {
@@ -820,7 +862,13 @@ function boot(): void {
   applyEventLine();
   renderBoards();
   requestAnimationFrame(frame);
-  void vision.start(settings.cameraId);
+  const demo = bootDemo(storage, matchMedia(SMALL_SCREEN_QUERY).matches, R.isInRound(getRound()));
+  if (demo) {
+    afterDemo = () => void vision.start(settings.cameraId);
+    openDemo(demo, false);
+  } else {
+    void vision.start(settings.cameraId);
+  }
   void keepAwake();
   addEventListener('pointerdown', () => void keepAwake(), { once: true });
   addEventListener('keydown', () => void keepAwake(), { once: true });

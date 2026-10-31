@@ -59,6 +59,10 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  // The /demo page and its video go straight to the network: a navigation fallback would show the stall app
+  // instead, and the browser's own range requests are what let the video seek and stream.
+  const path = url.pathname.slice(new URL(self.registration.scope).pathname.length);
+  if (path === 'demo' || path === 'demo/' || path === 'demo.html' || path.startsWith('media/')) return;
 
   if (req.mode === 'navigate') {
     // The offline shell is this build's own './', precached at install, never a page fetched later: a page

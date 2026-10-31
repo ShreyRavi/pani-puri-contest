@@ -69,8 +69,15 @@ const browser = await chromium.launch({
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
 });
 
+/** Every context has already seen the how-it-works demo, except the first-visit checks that ask for a fresh one. */
+async function newContext(opts, { firstVisit = false } = {}) {
+  const c = await browser.newContext(opts);
+  if (!firstVisit) await c.addInitScript(() => localStorage.setItem('ppc.demo.v1', '1'));
+  return c;
+}
+
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, permissions: ['camera'] });
+  const ctx = await newContext({ viewport: { width: 1920, height: 1080 }, permissions: ['camera'] });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -100,6 +107,79 @@ try {
     const csp = first.headers()['content-security-policy'] ?? '';
     assert.match(csp, /connect-src 'self'/);
     assert.match(csp, /form-action 'none'/);
+  });
+
+  // Value: protects=the how-it-works demo opening once on a first visit (video autoplaying, camera waiting until it
+  //   closes), the ? button/key reopening it, and the button never covering a live round; fails_when=the boot rule,
+  //   the help wiring or its hiding change; why_new=new feature; seam=none; no_claim=sound (needs a real click)
+  await check('first visit: the demo opens once, autoplays, and the camera waits for it', async () => {
+    const fresh = await newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] }, { firstVisit: true });
+    const fp = await fresh.newPage();
+    fp.on('pageerror', (e) => errors.push(e.message));
+    try {
+      await fp.goto(URL);
+      await booted(fp);
+      await fp.waitForSelector('#demo-dialog[open]', { timeout: 4000 });
+      assert.ok(await fp.isHidden('#demo-small'), 'laptop notice shown on a laptop');
+      assert.equal(await fp.textContent('#demo-close'), "Let's play");
+      assert.equal(await fp.locator('#demo-steps li').count(), 4);
+      await fp.waitForFunction(() => !document.getElementById('demo-video').paused, null, { timeout: 4000 });
+      await expectText(fp, '#view-idle [data-cam-text]', 'Starting camera…'); // camera not started behind the video
+      await fp.keyboard.press('Escape');
+      await fp.waitForSelector('#demo-dialog:not([open])', { state: 'attached' });
+      await fp.waitForFunction(() => document.activeElement?.id === 'name-input', null, { timeout: 4000 });
+      assert.ok(await fp.evaluate(() => document.getElementById('demo-video').paused), 'video kept playing after close');
+      await fp.waitForFunction(() => document.querySelector('#view-idle [data-cam-text]')?.textContent !== 'Starting camera…', null, { timeout: 15000 });
+      await fp.reload();
+      await booted(fp);
+      await fp.waitForTimeout(500); // gstack-timing-ok: gives a wrongly re-opened demo time to appear
+      assert.ok(!(await fp.evaluate(() => document.getElementById('demo-dialog').open)), 'demo opened again on a second visit');
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  await check('a phone gets the laptop notice and the demo, and can continue anyway', async () => {
+    const phone = await newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, permissions: ['camera'] }, { firstVisit: true });
+    const pp = await phone.newPage();
+    pp.on('pageerror', (e) => errors.push(e.message));
+    try {
+      await pp.goto(URL);
+      await booted(pp);
+      await pp.waitForSelector('#demo-dialog[open]', { timeout: 4000 });
+      await expectVisible(pp, '#demo-small');
+      assert.equal(await pp.evaluate(() => document.getElementById('demo-dialog').scrollTop), 0, 'notice scrolled out of view');
+      assert.equal(await pp.evaluate(() => document.documentElement.scrollWidth), 390, 'page wider than the phone');
+      await pp.tap('#demo-close');
+      await pp.waitForFunction(() => localStorage.getItem('ppc.smallok.v1') != null, null, { timeout: 4000 });
+      await pp.reload();
+      await booted(pp);
+      await pp.waitForTimeout(500); // gstack-timing-ok: gives a wrongly re-opened notice time to appear
+      assert.ok(!(await pp.evaluate(() => document.getElementById('demo-dialog').open)), 'notice came back after Continue anyway');
+    } finally {
+      await phone.close();
+    }
+  });
+
+  await check('? opens the demo on sign-up; the help button hides during a live round', async () => {
+    await expectVisible(page, '#help-btn');
+    await page.keyboard.press('Escape'); // out of the name field, where ? is just a character
+    await page.keyboard.press('?');
+    await page.waitForSelector('#demo-dialog[open]');
+    await page.click('#demo-x');
+    await page.waitForSelector('#demo-dialog:not([open])', { state: 'attached' });
+    await page.click('#help-btn');
+    await page.waitForSelector('#demo-dialog[open]');
+    await page.click('#demo-close');
+    // Enter must start a round, not reopen the demo from the ? button.
+    await page.waitForFunction(() => document.activeElement?.id === 'name-input', null, { timeout: 4000 });
+    await seed({ ...IDLE, phase: 'live', name: 'Help', endsAt: Date.now() + 40000, detectUntil: Date.now() + 41500, capAt: Date.now() + 70000 });
+    await expectVisible(page, '#help-btn', false);
+    await page.keyboard.press('?');
+    await page.waitForTimeout(300); // gstack-timing-ok: gives a wrongly opened demo time to appear
+    assert.ok(!(await page.evaluate(() => document.getElementById('demo-dialog').open)), '? opened the demo mid-round');
+    await seed({ ...IDLE });
+    await expectVisible(page, '#help-btn');
   });
 
   await check('keyboard loop: name, countdown, +/-, end twice, result', async () => {
@@ -466,7 +546,7 @@ try {
   //   later lock grant never boots, or boots with the stale in-memory board; why_new=the two-tab check closes the waiting
   //   tab, never the owner; seam=none; no_claim=a real browser crash of the owner
   await check('closing the stall tab hands over to the waiting tab with the round intact', async () => {
-    const other = await browser.newContext({ viewport: { width: 1920, height: 1080 }, permissions: ['camera'] });
+    const other = await newContext({ viewport: { width: 1920, height: 1080 }, permissions: ['camera'] });
     try {
       const owner = await other.newPage();
       await owner.goto(URL);
@@ -740,7 +820,7 @@ try {
     await seed({ ...IDLE });
   });
 
-  const denied = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const denied = await newContext({ viewport: { width: 1920, height: 1080 } });
   const p2 = await denied.newPage();
   await check('camera blocked: camera-off card, + becomes primary, named cause', async () => {
     await p2.addInitScript(() => {
@@ -803,7 +883,7 @@ try {
       forward();
     });
     await new Promise((r) => proxy.listen(PROXY_PORT, '127.0.0.1', r));
-    const slowCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const slowCtx = await newContext({ viewport: { width: 1920, height: 1080 } });
     const sp = await slowCtx.newPage();
     try {
       const origin = `http://127.0.0.1:${PROXY_PORT}/`;
@@ -836,6 +916,19 @@ try {
   await page.bringToFront();
   // Start the offline check from a known idle state, whatever earlier checks left behind.
   await page.evaluate(() => localStorage.setItem('ppc.round.v1', JSON.stringify({ phase: 'idle' })));
+  await check('/demo: the shareable page loads (never the cached stall app) and its video streams', async () => {
+    await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30000 });
+    const res = await page.goto(`${URL}demo`);
+    assert.equal(res.status(), 200);
+    assert.equal(await page.title(), 'How it works · Pani Puri Challenge');
+    assert.equal(await page.locator('#demo-steps li').count(), 4);
+    await page.waitForFunction(() => document.getElementById('demo-video').readyState >= 1, null, { timeout: 8000 });
+    const media = await fetch(`${URL}media/pani-puri-demo.mp4`, { headers: { range: 'bytes=0-99' } });
+    assert.equal(media.status, 206);
+    await page.goto(URL);
+    await booted(page);
+  });
+
   await check('offline: page, fonts and models load with the server stopped', async () => {
     await page.reload();
     await booted(page);

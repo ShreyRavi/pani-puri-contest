@@ -42,6 +42,13 @@ describe('buildPrecacheList', () => {
     expect(list).not.toContain('./index.html');
   });
 
+  it('leaves the /demo page and its video to the network (the stall never pre-downloads the video)', () => {
+    const l = buildPrecacheList([...DIST, 'demo.html', 'media/pani-puri-demo.mp4', 'media/pani-puri-demo.jpg']);
+    expect(l).not.toContain('./demo.html');
+    expect(l.some((p) => p.startsWith('./media/'))).toBe(false);
+    expect(l).toContain('./mediapipe/face_landmarker.task'); // 'media/' must not catch 'mediapipe/'
+  });
+
   it("normalizes paths to './...'", () => {
     expect(normalizePath('assets\\a.js')).toBe('./assets/a.js');
     expect(normalizePath('/assets/a.js')).toBe('./assets/a.js');
