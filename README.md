@@ -1,5 +1,9 @@
 # Pani Puri Challenge
 
+<a href="https://panipurigame.com/demo"><img src="docs/media/pani-puri-demo.gif" alt="Pani Puri Challenge demo: a contestant signs up, the countdown runs, and the camera counts each puri onto the leaderboard" width="720"/></a>
+
+**Play it at [panipurigame.com](https://panipurigame.com)** · ▶️ [Watch the full demo with sound](https://panipurigame.com/demo)
+
 A single-page app for a live pani puri eating contest at a wedding stall. One laptop, mirrored over HDMI to a 1920×1080 TV, runs the crowd display, the 60-second timer, the counting and the leaderboard.
 
 - **Solo time trials:** most puris in the round wins. The board lists everyone, and every round is kept on the laptop. Past 10 contestants, #1 stays pinned and the rest scroll slowly by themselves (hold on the top, glide down, glide back up). The host can scroll the board with the trackpad; it carries on by itself after 15 s untouched. The result screen first shows the contestant's own row, even at #15.
