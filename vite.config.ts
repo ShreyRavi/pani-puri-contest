@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
@@ -7,6 +8,18 @@ import { SECURITY_HEADERS } from './src/build/csp.ts';
 import { buildHashInput, buildPrecacheList, modelHashInput, renderServiceWorker } from './src/build/precache.ts';
 
 const sha1 = (data: string | Buffer) => createHash('sha1').update(data).digest('hex');
+
+/** The commit this build is made from, shown in Setup: Vercel's own git metadata, else the local checkout. */
+function commitHash(): string {
+  const vercel = process.env.VERCEL_GIT_COMMIT_SHA;
+  if (vercel) return vercel.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return ''; // a ZIP download has no git history: Setup shows the version alone
+  }
+}
+const pkg = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 /**
  * Build-only: after the bundle is written (and public/ has been copied
@@ -43,6 +56,7 @@ function precacheManifest(): Plugin {
 export default defineConfig({
   plugins: [precacheManifest()],
   worker: { format: 'es' },
+  define: { __APP_VERSION__: JSON.stringify(pkg.version), __COMMIT__: JSON.stringify(commitHash()) },
   // Two pages: the stall app, and /demo (the shareable how-it-works page; vercel.json routes /demo to it).
   build: { rollupOptions: { input: { main: 'index.html', demo: 'demo.html' } } },
   preview: { headers: SECURITY_HEADERS },

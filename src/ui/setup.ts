@@ -17,7 +17,26 @@ export interface SetupDeps {
   onBoardChanged: () => void;
 }
 
+const REPO_URL = 'https://github.com/ShreyRavi/pani-puri-contest';
+
+/** "v0.1.0 · a1b2c3d · Source on GitHub": which build this laptop runs, the commit linking to its code. */
+function renderVersion(el: HTMLElement): void {
+  const link = (href: string, label: string) => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = label;
+    return a;
+  };
+  const parts: (string | HTMLAnchorElement)[] = [`v${__APP_VERSION__}`];
+  if (__COMMIT__) parts.push(' · ', link(`${REPO_URL}/commit/${__COMMIT__}`, __COMMIT__));
+  parts.push(' · ', link(REPO_URL, 'Source on GitHub'));
+  el.replaceChildren(...parts);
+}
+
 export function initSetup(deps: SetupDeps) {
+  renderVersion($('set-version'));
   const cam = $<HTMLSelectElement>('set-camera');
   const seconds = $<HTMLInputElement>('set-seconds');
   const autoconfirm = $<HTMLInputElement>('set-autoconfirm');
