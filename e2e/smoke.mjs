@@ -59,7 +59,7 @@ async function check(name, fn) {
 const IDLE = {
   phase: 'idle', name: '', durationMs: 60000, detectMs: 1500, autoConfirmMs: 0, count: 0, rejected: 0, notCounted: 0,
   armingEndsAt: 0, endsAt: 0, detectUntil: 0, capAt: 0, pausedRemaining: 0, pausedAt: 0, pausedFrom: null, resultAt: 0,
-  queue: [], dueAt: 0, last: null, undoable: false, resultId: null,
+  queue: [], dueAt: 0, last: null, autoCounted: 0, resultId: null,
 };
 
 await startServer();
@@ -131,6 +131,25 @@ try {
     await booted(page);
     await page.waitForSelector('#view-live:not([hidden])');
     await expectText(page, '#live-count', '6');
+  });
+
+  // Value: protects=in Auto the camera's bites are already counted and X (Discount) takes them back one per press, never a
+  //   puri the referee added by hand; fails_when=X undoes only one level, discounts a manual +1, or the strip keeps the
+  //   Hybrid label; why_new=Auto discount had unit coverage only; seam=a seeded round stands in for camera bites (the fake
+  //   camera shows no face); no_claim=live detection
+  await check('Auto: X discounts camera bites one per press, never a hand-added puri', async () => {
+    const now = await page.evaluate(() => Date.now());
+    await seed({ ...IDLE, phase: 'live', name: 'Meera', count: 3, autoCounted: 2, endsAt: now + 50000, savedAt: now }, { mode: 'auto' });
+    await expectText(page, '#btn-reject-label', 'Discount');
+    await page.keyboard.press('x');
+    await expectText(page, '#live-count', '2');
+    await page.keyboard.press('x');
+    await expectText(page, '#live-count', '1');
+    assert.ok(await page.isDisabled('#btn-reject'), 'Discount stays enabled with no camera bites left');
+    await page.keyboard.press('x');
+    // gstack-timing-ok: a negative check (X must NOT remove the hand-added puri); give a wrong render a few frames.
+    await page.waitForTimeout(200);
+    await expectText(page, '#live-count', '1');
   });
 
   await check('seeded bites: banner, +N more, auto-confirm bar, Esc waiting count', async () => {

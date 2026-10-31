@@ -223,7 +223,7 @@ function commit(next: R.RoundState): void {
       ding(settings.sound);
       pop($('live-count'), 'pop');
     } else if (next.count < before.count && next.rejected > before.rejected) {
-      pop($('live-count'), 'shake'); // Auto-mode undo (DD9)
+      pop($('live-count'), 'shake'); // Auto-mode discount (DD9)
     }
   }
   if (before.phase === 'arming' && next.phase === 'live') {
@@ -684,10 +684,10 @@ function renderLive(r: R.RoundState, now: number): void {
   const plusPrimary = off || settings.mode === 'manual' || (settings.mode === 'auto' && !waiting);
   strip.dataset.primary = plusPrimary ? 'plus' : 'confirm';
   text($('btn-plus'), plusPrimary ? '+1 puri (+)' : '+1');
-  const canUndo = settings.mode === 'auto' && r.undoable && r.count > 0;
+  const canDiscount = settings.mode === 'auto' && r.autoCounted > 0 && r.count > 0;
   $<HTMLButtonElement>('btn-confirm').disabled = !waiting;
-  $<HTMLButtonElement>('btn-reject').disabled = !waiting && !canUndo;
-  text($('btn-reject-label'), settings.mode === 'auto' && !waiting ? 'Undo last' : 'Not a puri');
+  $<HTMLButtonElement>('btn-reject').disabled = !waiting && !canDiscount;
+  text($('btn-reject-label'), settings.mode === 'auto' && !waiting ? 'Discount' : 'Not a puri');
   text($('btn-pause'), paused ? 'Resume (P)' : 'Pause (P)');
 
   const armed = now < escArmedUntil;
@@ -704,7 +704,7 @@ function stripStatus(r: R.RoundState, off: boolean): string {
     settings.mode === 'manual'
       ? 'manual counting'
       : settings.mode === 'auto'
-        ? 'auto counting'
+        ? 'camera counts, X discounts'
         : settings.autoConfirmSeconds > 0
           ? `auto-confirm after ${settings.autoConfirmSeconds}s`
           : 'auto-confirm off';

@@ -3,7 +3,7 @@
 A single-page app for a live pani puri eating contest at a wedding stall. One laptop, mirrored over HDMI to a 1920×1080 TV, runs the crowd display, the 60-second timer, the counting and the leaderboard.
 
 - **Solo time trials:** most puris in the round wins. The board shows the top 10, and every round is kept on the laptop.
-- **Hybrid counting:** the webcam spots a bite, and the referee confirms with **Space** or rejects with **X**. Manual **+ / −** always works. Setup can switch to Auto or Manual.
+- **Auto counting:** the webcam adds **+1** the moment it spots a bite, and the referee presses **X** (Discount) to take back one it got wrong, once per bad bite. Manual **+ / −** always works. Setup can switch to Hybrid (the referee confirms each bite with **Space**) or Manual.
 - **Private:** no video leaves the laptop and nothing is recorded. Frames go only to an in-page Web Worker.
 - **Offline:** MediaPipe models, WASM and fonts are bundled. After one load the service worker serves everything, so venue wifi doesn't matter.
 
@@ -53,7 +53,7 @@ Press **Esc** then **S** on the sign-up screen to open Setup.
    - If wide-open bites don't reach red, lower the **Mouth-open line** (try 0.40).
    - If talking or laughing triggers candidates, raise it (0.50) or tick **Require hand near mouth**.
 4. **Real bite (20s):** eat one puri the way a contestant would, hand to mouth. The log should show one candidate. If it shows two, raise **Minimum gap between bites**.
-5. **Mode:** leave **Hybrid** unless there's no referee, in which case use Manual and tap + per puri. Set the round length, sounds and the **Event line** (shown above the title), then press **Done (Esc)**. Settings save as you change them.
+5. **Mode:** leave **Auto**, with the referee's finger near **X**. Use Hybrid if the referee would rather approve every bite, or Manual to tap + per puri. A laptop that already ran an older build keeps the mode saved there, so check it says Auto. Set the round length, sounds and the **Event line** (shown above the title), then press **Done (Esc)**. Settings save as you change them.
 
 Write the final Mouth-open line and gap values on a sticky note and tape it to the laptop.
 
@@ -62,7 +62,7 @@ Write the final Mouth-open line and gap values on a sticky note and tape it to t
 - **Absolute (default):** a bite is the mouth opening past the open line, then closing below the close line.
 - **Relative:** a bite is opening past the open line, then dropping by **Drop** (default 0.15) from its peak. It still works when someone chews with their mouth half open and never gets below the close line.
 
-At rehearsal, have three people eat five puris each. **Go with Absolute** if the log catches at least 4 of every 5. If people regularly stay above the green line between bites (the bar sits striped on *Waiting for close*), switch **Bite rule** to Relative and repeat. Either way the referee still confirms every bite in Hybrid.
+At rehearsal, have three people eat five puris each. **Go with Absolute** if the log catches at least 4 of every 5. If people regularly stay above the green line between bites (the bar sits striped on *Waiting for close*), switch **Bite rule** to Relative and repeat. Either way the referee discounts any wrong count with **X** in Auto (or confirms every bite in Hybrid).
 
 ## Running a round
 
@@ -70,7 +70,7 @@ At rehearsal, have three people eat five puris each. **Go with Absolute** if the
 | --- | --- | --- |
 | Who's next | Contestant types a first name | **Enter** starts |
 | 3-2-1 | Countdown. Contestant keeps their mouth closed while the resting baseline is captured | **Esc** cancels |
-| Live | Camera flags a bite and the banner pops up (*+N more* when several wait) | **Space** count it · **X** not a puri · **+ / −** manual · **P** pause · **Esc Esc** end early |
+| Live | Auto: each bite the camera sees adds +1 straight away. Hybrid: the banner pops up (*+N more* when several wait) | **X** discount a camera bite (Auto) or not a puri (Hybrid) · **Space** count it (Hybrid) · **+ / −** manual · **P** pause · **Esc Esc** end early |
 | Time! | Score saved to the board. Returns to sign-up after 20s | **Enter** next · **+ / −** fix score |
 
 Other keys: **F** toggles fullscreen. **S** opens Setup from sign-up (press **Esc** first if the name box is focused) or from the result screen. **⌘/Ctrl Z** undoes a Discard or Re-run while its toast is showing. Holding a key down counts once.

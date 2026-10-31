@@ -209,20 +209,39 @@ describe('after the buzzer (O10, O19, O20, DD4)', () => {
   });
 });
 
-describe('auto undo (O5, DD9)', () => {
-  it('X with nothing waiting undoes the last auto count, one level only', () => {
+describe('auto count + discount (O5, DD9)', () => {
+  it('a detected bite adds +1 at once; X discounts camera counts one press at a time', () => {
     let s = R.candidate(liveAt(), bite(5000), 'auto', 5000);
+    expect(s).toMatchObject({ count: 1, autoCounted: 1, queue: [] });
     s = R.candidate(s, bite(6000), 'auto', 6000);
-    expect(s).toMatchObject({ count: 2, undoable: true });
+    expect(s).toMatchObject({ count: 2, autoCounted: 2 });
     s = R.reject(s, 6500, 'auto');
-    expect(s).toMatchObject({ count: 1, rejected: 1, undoable: false });
-    expect(R.reject(s, 6600, 'auto')).toEqual(s);
+    expect(s).toMatchObject({ count: 1, rejected: 1, autoCounted: 1 });
+    s = R.reject(s, 6600, 'auto');
+    expect(s).toMatchObject({ count: 0, rejected: 2, autoCounted: 0 });
+    expect(R.reject(s, 6700, 'auto')).toEqual(s);
   });
 
-  it('a manual change clears undo', () => {
+  it('X never discounts a puri the referee added by hand', () => {
     let s = R.candidate(liveAt(), bite(5000), 'auto', 5000);
     s = R.adjust(s, 1, 5100);
-    expect(R.reject(s, 5200, 'auto').count).toBe(2);
+    s = R.reject(s, 5200, 'auto');
+    expect(s).toMatchObject({ count: 1, autoCounted: 0 });
+    expect(R.reject(s, 5300, 'auto').count).toBe(1);
+  });
+
+  it('a manual -1 below the camera tally leaves fewer camera counts to discount', () => {
+    let s = R.candidate(liveAt(), bite(5000), 'auto', 5000);
+    s = R.candidate(s, bite(6000), 'auto', 6000);
+    s = R.adjust(R.adjust(s, -1, 6100), -1, 6200);
+    expect(s).toMatchObject({ count: 0, autoCounted: 0 });
+  });
+
+  it('X discounts while paused and in the buzzer grace, not on the result screen', () => {
+    let s = R.candidate(liveAt(), bite(5000), 'auto', 5000);
+    expect(R.reject(R.togglePause(s, 5500), 5600, 'auto').count).toBe(0);
+    const result = { ...s, phase: 'result' as const };
+    expect(R.reject(result, 7000, 'auto')).toEqual(result);
   });
 });
 

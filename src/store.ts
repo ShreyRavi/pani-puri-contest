@@ -35,7 +35,7 @@ export interface Result {
 export const DEFAULT_SETTINGS: Settings = {
   cameraId: '',
   roundSeconds: 60,
-  mode: 'hybrid',
+  mode: 'auto',
   autoConfirmSeconds: 0,
   sound: 'all',
   detection: 'absolute',
@@ -73,7 +73,8 @@ function write(key: string, value: unknown): void {
 /** Load guard for rounds saved by older builds (R9): single `pending` becomes `queue`, new fields get defaults. */
 export function normalizeRound(raw: unknown): RoundState & { savedAt: number } {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const { pending, savedAt, ...rest } = r as { pending?: Pending | null; savedAt?: number } & Record<string, unknown>;
+  // `undoable` (one-level Auto undo) predates `autoCounted`; an old save starts with nothing to discount.
+  const { pending, savedAt, undoable: _undoable, ...rest } = r as { pending?: Pending | null; savedAt?: number; undoable?: unknown } & Record<string, unknown>;
   const s = { ...IDLE, ...(rest as Partial<RoundState>) };
   if (!Array.isArray(s.queue)) s.queue = [];
   if (pending && !s.queue.length) s.queue = [{ ...pending, openedAt: pending.openedAt ?? pending.at }];

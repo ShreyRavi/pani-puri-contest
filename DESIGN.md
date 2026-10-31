@@ -87,7 +87,7 @@ Titan One for display, Rubik (400/500/700/900) for everything else. Both are bun
 ## Components
 
 - **Status pill:** dot (chutney ok, marigold waiting, chilli bad) + 28px text, top-left of the camera box.
-- **Operator strip:** primary actions first. Hybrid: Count it (chutney) and Not a puri (chilli-surface) lead. Manual, Auto with nothing waiting, or camera off: **+1 puri (+)** leads in chutney and the others turn outline (DD2). Keys never change.
+- **Operator strip:** primary actions first. Hybrid: Count it (chutney) and Not a puri (chilli-surface) lead. Manual, Auto, or camera off: **+1 puri (+)** leads in chutney and the others turn outline; in Auto the X button reads **Discount** and is enabled while the round has camera counts to take back (DD2). Keys never change.
 - **Bite banner:** marigold bar along the bottom of the camera box. Title ("Bite spotted!", "Last bite? Referee decides", "Under review"), optional "+N more" pill, referee help. A 6px ground bar along its top shrinks for auto-confirm.
 - **Overlay card:** centered in the camera box on panel color. Paused uses a 6px marigold dashed border and 80px text; camera off uses 56px text.
 - **Toast:** cream on ground-text, top 48px, optional Undo button. The sticky notice uses the same style, holds the 48px slot until a key is pressed, and pushes a toast below it.

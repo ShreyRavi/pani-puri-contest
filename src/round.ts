@@ -4,6 +4,7 @@
 // IDLE -> ARMING (3-2-1) -> LIVE <-> PAUSED -> BUZZER (detect, then hold) -> RESULT -> IDLE
 //                                      BUZZER <-> PAUSED
 //
+// Auto mode counts a bite the moment it is seen; X discounts camera counts, newest first.
 // Waiting bites (hybrid mode) live in a FIFO `queue` of at most MAX_QUEUE. Only
 // the oldest has an auto-confirm clock (`dueAt`); pausing freezes it.
 //
@@ -43,7 +44,7 @@ export interface RoundState {
   /** 0 = off */
   autoConfirmMs: number;
   count: number;
-  /** decided "not a puri" by the referee (X, or Auto-mode undo) */
+  /** decided "not a puri" by the referee (X: a rejected waiting bite or an Auto-mode discount) */
   rejected: number;
   /** spotted but never decided: queue overflow, grace cap, Esc end, camera loss */
   notCounted: number;
@@ -61,8 +62,8 @@ export interface RoundState {
   dueAt: number;
   /** last confirmed puri: count and round-clock remaining ms */
   last: { count: number; remaining: number } | null;
-  /** the latest count came from an auto candidate and can be undone with X */
-  undoable: boolean;
+  /** camera-counted puris (Auto mode) still in the count, so X can discount them */
+  autoCounted: number;
   /** id of the saved leaderboard entry once the round reaches RESULT */
   resultId: string | null;
 }
@@ -87,7 +88,7 @@ export const IDLE: RoundState = {
   queue: [],
   dueAt: 0,
   last: null,
-  undoable: false,
+  autoCounted: 0,
   resultId: null,
 };
 
@@ -153,7 +154,7 @@ function step(s: RoundState, now: number): RoundState {
     if (now >= s.capAt) {
       // Cap: auto-confirm leftovers when auto-confirm is on, else they were never decided.
       const n = s.queue.length;
-      const decided = s.autoConfirmMs > 0 ? bump(s, n, s.capAt, false) : { ...s, notCounted: s.notCounted + n };
+      const decided = s.autoConfirmMs > 0 ? bump(s, n, s.capAt) : { ...s, notCounted: s.notCounted + n };
       return { ...decided, phase: 'result', queue: [], dueAt: 0, resultAt: s.capAt };
     }
     if (now >= s.detectUntil && !s.queue.length) {
@@ -178,7 +179,7 @@ export function accepts(s: RoundState, openedAt: number, now: number): boolean {
 
 export function candidate(s: RoundState, c: Pending, mode: CountMode, now: number): RoundState {
   if (mode === 'manual' || !accepts(s, c.openedAt, now)) return s;
-  if (mode === 'auto') return bump(s, 1, now, true);
+  if (mode === 'auto') return { ...bump(s, 1, now), autoCounted: s.autoCounted + 1 };
   let queue = [...s.queue, c];
   let notCounted = s.notCounted;
   let dueAt = s.dueAt;
@@ -207,21 +208,21 @@ function canDecide(s: RoundState): boolean {
 export function confirm(s: RoundState, now: number): RoundState {
   if (!s.queue.length || !canDecide(s)) return s;
   const queue = s.queue.slice(1);
-  const counted = bump(s, 1, now, false);
+  const counted = bump(s, 1, now);
   return { ...counted, queue, dueAt: queue.length ? due(s, now) : 0 };
 }
 
-/** X: reject the oldest waiting bite; in Auto mode with nothing waiting, undo the last auto count. */
+/** X: reject the oldest waiting bite; in Auto mode with nothing waiting, discount one camera count. */
 export function reject(s: RoundState, now: number, mode: CountMode = 'hybrid'): RoundState {
   if (!canDecide(s)) return s;
   if (s.queue.length) {
     const queue = s.queue.slice(1);
     return { ...s, queue, rejected: s.rejected + 1, dueAt: queue.length ? due(s, now) : 0 };
   }
-  if (mode === 'auto' && s.undoable && s.count > 0) {
+  if (mode === 'auto' && s.autoCounted > 0 && s.count > 0) {
     const count = s.count - 1;
     const last = s.last && s.last.count > count ? null : s.last;
-    return { ...s, count, last, rejected: s.rejected + 1, undoable: false };
+    return { ...s, count, last, rejected: s.rejected + 1, autoCounted: s.autoCounted - 1 };
   }
   return s;
 }
@@ -229,13 +230,14 @@ export function reject(s: RoundState, now: number, mode: CountMode = 'hybrid'): 
 /** Manual +1 / -1. Works in every in-round phase and on the result screen (Fix score). */
 export function adjust(s: RoundState, delta: number, now: number): RoundState {
   if (s.phase === 'idle' || s.phase === 'arming') return s;
-  return bump(s, delta, now, false);
+  return bump(s, delta, now);
 }
 
-function bump(s: RoundState, delta: number, now: number, fromAuto: boolean): RoundState {
+function bump(s: RoundState, delta: number, now: number): RoundState {
   const count = Math.max(0, s.count + delta);
   const last = delta > 0 ? { count, remaining: remaining(s, now) } : s.last;
-  return { ...s, count, last, undoable: fromAuto && delta > 0 };
+  // A manual -1 below the camera's tally leaves fewer camera counts to discount.
+  return { ...s, count, last, autoCounted: Math.min(s.autoCounted, count) };
 }
 
 /** P: freeze whatever clock is running (round timer in LIVE, detect window and cap in BUZZER). */
