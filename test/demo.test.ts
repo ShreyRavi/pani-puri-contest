@@ -142,6 +142,18 @@ describe('demo video sound', () => {
     expect(v.muted).toBe(true);
   });
 
+  it('closing the demo while it is still starting never restarts it in the background', async () => {
+    const v = fakeVideo();
+    let abort: (e: DOMException) => void = () => {};
+    v.play = () => new Promise((_, reject) => (abort = reject)); // still loading
+    playDemo(v as unknown as HTMLVideoElement, btn() as unknown as HTMLButtonElement);
+    stopDemo(v as unknown as HTMLVideoElement);
+    abort(new DOMException('interrupted by pause()', 'AbortError'));
+    await settle();
+    expect(v.paused).toBe(true);
+    expect(v.muted).toBe(false); // left alone, not flipped to muted and replayed
+  });
+
   it('closing the demo stops listening, so stall keys never touch the video', async () => {
     const v = fakeVideo();
     playDemo(v as unknown as HTMLVideoElement, btn() as unknown as HTMLButtonElement);
