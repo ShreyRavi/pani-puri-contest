@@ -744,6 +744,18 @@ try {
   //   confirm (Esc / Cancel change nothing), keeps the camera and event line, and Clear board asks twice in that same
   //   dialog; fails_when=reset drops the event line, skips the question, or a native confirm() comes back; why_new=new
   //   button and dialog; seam=none; no_claim=none beyond protects
+  await check('Setup shows the version, the commit it was built from, and a link to the code', async () => {
+    await page.keyboard.press('Escape'); // leave the name field so S opens Setup
+    await page.keyboard.press('s');
+    await expectVisible(page, '#view-setup');
+    assert.match(await page.textContent('#set-version'), /^v\d+\.\d+\.\d+( · [0-9a-f]{7})? · Source on GitHub$/);
+    const links = await page.$$eval('#set-version a', (as) => as.map((a) => a.href));
+    assert.equal(links.at(-1), 'https://github.com/ShreyRavi/pani-puri-contest');
+    if (links.length === 2) assert.match(links[0], /^https:\/\/github\.com\/ShreyRavi\/pani-puri-contest\/commit\/[0-9a-f]{7}$/);
+    await page.keyboard.press('Escape');
+    await expectVisible(page, '#view-idle');
+  });
+
   await check('Setup: reset settings and clear board use the styled confirm', async () => {
     await page.keyboard.press('Escape'); // leave the name field so S opens Setup
     await page.keyboard.press('s');

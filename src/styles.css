@@ -398,6 +398,9 @@ kbd { font: 600 18px var(--body); padding: 2px 8px; border-radius: 6px; }
 .hotkeys dd { margin: 0; }
 .setup-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .setup-note { font-size: 20px; color: var(--muted); }
+.setup-foot-text { display: flex; flex-direction: column; gap: 6px; }
+.setup-version { font-size: 18px; color: var(--muted); }
+.setup-version a { color: var(--marigold); text-underline-offset: 3px; }
 
 .toast {
   position: absolute; left: 50%; top: 48px; transform: translateX(-50%); z-index: var(--z-toast); background: var(--cream); color: var(--ground);
