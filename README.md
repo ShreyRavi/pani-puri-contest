@@ -10,29 +10,55 @@ A single-page app for a live pani puri eating contest at a wedding stall. One la
 
 Design source: [Design canvas](https://claude.ai/code/artifact/a11882ba-97e9-4c74-ac93-0bd68c03f250). Design record: [docs/designs/pani-puri-challenge.md](docs/designs/pani-puri-challenge.md).
 
-## Where to run it: local or Vercel
+## Where to run it: website or local
 
-Two ways to open the app. Pick **one URL for the whole night**, because the board and settings live in that URL's browser storage: `localhost:4173` and the hosted site keep separate boards.
+Two ways to open the app. Pick **one for the whole night**, because the board and settings live in that address's browser storage: `panipurigame.com` and `localhost:4173` keep separate boards.
 
-- **Local (most reliable):** `npm run stall` on the laptop. No network needed at all.
-- **Hosted:** open the Vercel URL once at home on wifi, wait ~10 s for the models to cache, then it works offline too. No Node needed at the venue.
+- **Website:** open **[panipurigame.com](https://panipurigame.com)** in Chrome once at home on wifi and wait ~10 s. After that it opens even with no wifi, and even if Vercel is down: the laptop keeps its own copy. No setup needed.
+- **Local (backup):** the laptop serves the app itself with `npm run stall`. Needs a one-time setup at home (below), then no internet at all.
 
-## Set up the stall laptop (do this at home, on wifi)
+## Backup plan: run it locally
 
-Requirements: Node 20+ and **Google Chrome** (WebGL in workers gives the lowest latency).
+Use this if the laptop has never opened the website, its browser data was cleared, or you just want zero dependence on the internet. **Do steps 1 to 4 at home on wifi, before the event**: they download things. Step 5 is all you need at the venue, with or without wifi.
+
+**1. Install Node.js and Google Chrome (once).**
+- Node.js 22 (LTS) or newer: download the installer from [nodejs.org](https://nodejs.org), or on a Mac with Homebrew run `brew install node`.
+- Check it worked: open Terminal and run `node -v`. It should print `v22` or higher.
+- Google Chrome from [google.com/chrome](https://www.google.com/chrome/).
+
+**2. Get the code (once).** Either:
+- `git clone https://github.com/ShreyRavi/pani-puri-contest.git`, or
+- on the [GitHub page](https://github.com/ShreyRavi/pani-puri-contest), click **Code › Download ZIP** and unzip it somewhere easy, like your Desktop.
+
+**3. Install and build (once, needs internet).** In Terminal:
 
 ```sh
-npm install
-npm run stall        # fetches models, builds, serves on http://localhost:4173 and opens Chrome
+cd ~/Desktop/pani-puri-contest    # wherever the folder is
+npm install                       # downloads the app's libraries (~1 min)
+npm run stall                     # downloads the face models, builds, starts the app and opens Chrome
 ```
 
-1. When Chrome asks, allow the camera. Choose "Allow on every visit".
-2. Leave the page open for ~10 seconds so the service worker caches the models.
-3. **Real offline test:** turn off wifi *and* stop the server (Ctrl+C in the terminal), then reload. The page, fonts and the camera with face tracking should all come up. If they don't, reconnect, reload once, wait 10 s and try again.
+Chrome opens **http://localhost:4173**. Allow the camera ("Allow on every visit").
 
-At the venue you only need `npm run preview` (or `npm run stall`). Neither needs a network.
+**4. Prove it works offline (once).** Wait ~10 s on the page. Then turn off wifi, press **Ctrl+C** in Terminal to stop the app, run `npm run stall` again, and check the camera box says *Camera ready*. If it does, the laptop is ready.
 
-If `npm run stall` says the port is in use, an old server is still running: close that terminal window, or run `lsof -i :4173` and quit the listed process.
+**5. At the event.** Open Terminal and run:
+
+```sh
+cd ~/Desktop/pani-puri-contest
+npm run stall
+```
+
+Keep the Terminal window open all night: closing it stops the app (Chrome then keeps working from its saved copy until the next reload, but don't count on it). If Chrome doesn't open by itself, go to **http://localhost:4173**.
+
+Good to know:
+- **Always use the same address:** `http://localhost:4173`. A different port (like 4174) is a different, empty board.
+- **"Port 4173 is in use":** an old copy is still running. Close the other Terminal window, or run `lsof -i :4173` and quit that process, then try again.
+- **Switching from the website mid-event:** scores don't move over. On the website, open Setup › **Export CSV** first so you have them, and write down the top few.
+- **Updating the local copy:** at home on wifi, run `git pull` (or download the ZIP again), then `npm install` and `npm run stall`.
+- The how-it-works demo video plays locally too, from the copy in the folder.
+
+## Stall laptop and TV
 
 ### Keep the laptop awake
 
